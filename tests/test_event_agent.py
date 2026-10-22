@@ -159,7 +159,7 @@ def test_validated_rejection_is_published_once(tmp_path, monkeypatch):
         "evidence_path": str(evidence_path), "evidence_sha256": digest})
     review = {"schema": 1, "request_id": request["id"], "context": request["context"],
               "evidence_sha256": digest, "action": "REJECT", "risk_usd": 0,
-              "win_probability": None, "rationale_tr": "Kan�t eksik oldu�u i�in aday mevcut risk kurallar� kapsam�nda reddedildi.",
+              "win_probability": None, "rationale_tr": "Kanıt eksik olduğu için aday mevcut risk kuralları kapsamında reddedildi.",
               "checks": {key: False for key in service.CHECKS}}
     calls = []
     monkeypatch.setattr(service.agent_bridge, "validate_review", lambda *args: calls.append("validate"))

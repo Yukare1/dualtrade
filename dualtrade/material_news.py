@@ -22,11 +22,11 @@ ISSUER_HOSTS = {'AAPL': {'investor.apple.com', 'www.apple.com'},
 _SCALES = {'trillion': 1e12, 'billion': 1e9, 'bn': 1e9, 'million': 1e6,
            'mln': 1e6, 'm': 1e6, 'thousand': 1e3, 'k': 1e3}
 _SCALE_PATTERN = '|'.join(_SCALES)
-_AMOUNT_PATTERN = (r'(?P<currency>[$��]|USD|EUR|GBP)?\s*'
+_AMOUNT_PATTERN = (r'(?P<currency>[$€£]|USD|EUR|GBP)?\s*'
                    r'(?P<amount>-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)'
                    r'(?:\s*(?P<scale>' + _SCALE_PATTERN + r'))?'
-                   r'(?:\s*(?P<currency_suffix>[$��]|USD|EUR|GBP))?')
-_EVIDENCE_AMOUNT = re.compile(r'(?<![\w.,$��+\-])' + _AMOUNT_PATTERN +
+                   r'(?:\s*(?P<currency_suffix>[$€£]|USD|EUR|GBP))?')
+_EVIDENCE_AMOUNT = re.compile(r'(?<![\w.,$€£+\-])' + _AMOUNT_PATTERN +
                               r'(?!\w|[.,]\d|%)', re.I)
 
 
@@ -39,7 +39,7 @@ def numeric_anchor(anchor, value, unit='USD'):
         return False
     for currency in (match['currency'], match['currency_suffix']):
         if currency:
-            currency = {'$': 'USD', '�': 'EUR', '�': 'GBP'}.get(currency, currency.upper())
+            currency = {'$': 'USD', '€': 'EUR', '£': 'GBP'}.get(currency, currency.upper())
             if currency != target[1].upper():
                 return False
     parsed = float(match['amount'].replace(',', ''))

@@ -17,7 +17,7 @@ def packet(monkeypatch):
     monkeypatch.setattr('dualtrade.decision_revision.observation_context', lambda cfg: 'decision-one')
     e['observation_context'] = 'decision-one'
     review={'schema':1,'request_id':r['id'],'context':r['context'],'evidence_sha256':'hash',
-        'action':'APPROVE','rationale_tr':'Destek �zerinde teyitli yap�; maliyetler ve stop mesafesi mevcut s�n�rlar i�inde.',
+        'action':'APPROVE','rationale_tr':'Destek üzerinde teyitli yapı; maliyetler ve stop mesafesi mevcut sınırlar içinde.',
         'checks':{k:True for k in a.CHECKS},'risk_usd':15,'win_probability':None}
     snap={'time':1001,'ready':True,'observation_context':'decision-one','observation_ready':True,'contracts':[{'symbol':'AAPL.NAS','verified':True,'entry_allowed':True,'ai_news':{'ready':True}}]}
     ea={'time':1001,'demo':True,'agent_review_required':True,'decision_context':r['context'],'equity':1000}
@@ -166,7 +166,7 @@ def test_native_mcp_exit_review_binds_actual_owned_position(tmp_path,monkeypatch
             return {'positions':[position]} if name=='get_trading_open_positions' else {}
     monkeypatch.setattr(mt5_mcp,'NativeMT5',Native)
     review={'schema':1,'action':'CLOSE','nonce':'nonce','context':'a'*64,'ticket':'123','identifier':'456',
-        'symbol':'AAPL.NAS','volume':.2,'rationale_tr':'Destek k�r�l�m�yla mevcut teknik pozisyonun gerek�esi ge�ersizle�ti.'}
+        'symbol':'AAPL.NAS','volume':.2,'rationale_tr':'Destek kırılımıyla mevcut teknik pozisyonun gerekçesi geçersizleşti.'}
     target,text=a.prepare_close(cfg,review,1001)
     assert target==tmp_path/'agent-close.txt' and '|123|456|AAPL.NAS|0.2|' in text
     position['magic']=999

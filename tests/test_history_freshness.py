@@ -11,7 +11,7 @@ def ny(day, hour, minute=0):
 
 
 def schedule(tmp_path, now, offset=10800, *, missing_day=None):
-    # Broker stock CFD session 09:35�15:55 New York, converted to server time.
+    # Broker stock CFD session 09:35–15:55 New York, converted to server time.
     ny_offset = int(cal.now_ny(now).utcoffset().total_seconds())
     opening = 9 * 3600 + 35 * 60 + offset - ny_offset
     closing = 15 * 3600 + 55 * 60 + offset - ny_offset
@@ -84,7 +84,7 @@ def test_missing_prior_session_schedule_never_skips_coverage(tmp_path):
 @pytest.mark.parametrize('day,first_h4_hour', [('2026-10-26', 6), ('2026-11-02', 9)])
 def test_clock_change_requires_completed_current_h4_before_review(tmp_path, day, first_h4_hour):
     # The first partial-session H4 bucket follows the server grid, not NY 09:00.
-    # Oct 26: broker+2 / NY-4 gives 06:00�10:00 NY; Nov 2 gives 09:00�13:00.
+    # Oct 26: broker+2 / NY-4 gives 06:00–10:00 NY; Nov 2 gives 09:00–13:00.
     offset = 7200
     now = ny(day, first_h4_hour + 4) - 60
     cfg = schedule(tmp_path, now, offset)

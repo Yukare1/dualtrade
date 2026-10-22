@@ -73,9 +73,9 @@ def economic_review(source_amount='$120 million', anchor='$120 million', value=1
     ('$120 million', '$120', 120),
     ('$120.5 million', '$120', 120),
     ('$1,200 million', '200 million', 200),
-    ('�120 million', '120 million', 120),
-    ('�120 million', '�120 million', 120),
-    ('�120 million', '�120 million', 120),
+    ('€120 million', '120 million', 120),
+    ('€120 million', '€120 million', 120),
+    ('£120 million', '£120 million', 120),
     ('EUR 120 million', 'EUR 120 million', 120),
     ('120 million EUR', '120 million', 120),
     ('120 million EUR', '120 million EUR', 120),
@@ -108,8 +108,8 @@ def test_complete_amount_keeps_positive_guidance_positive():
     ('$1,200.5 million', 1200.5, 'USD million'),
     ('USD 100 million', 100, 'USD million'),
     ('100 million USD', 100, 'USD million'),
-    ('�100 million', 100, 'EUR million'),
-    ('�100 million', 100, 'GBP million'),
+    ('€100 million', 100, 'EUR million'),
+    ('£100 million', 100, 'GBP million'),
     ('100', 100, 'USD million'),
 ])
 def test_complete_numeric_evidence_supports_exact_scales_and_currency(anchor, value, unit):
