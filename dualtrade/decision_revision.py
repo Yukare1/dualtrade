@@ -31,6 +31,7 @@ dualtrade/demo_exception.py dualtrade/fundamentals.py dualtrade/investment.py
 dualtrade/investment_runner.py dualtrade/material_news.py dualtrade/mt5_mcp.py
 dualtrade/news_guard.py dualtrade/official_news.py dualtrade/policy.py
 dualtrade/providers.py dualtrade/risk.py dualtrade/storage.py dualtrade/swing.py
+dualtrade/universe.py
 dualtrade/validation.py dualtrade/frozen/analyst.py dualtrade/frozen/ptr.py
 MQL5/Experts/DualTrade.mq5 MQL5/Include/DualAgent.mqh
 MQL5/Include/DualAgentBridge.mqh MQL5/Include/DualExecution.mqh

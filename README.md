@@ -45,6 +45,25 @@ limits and checks for newly filed documents still apply during the session.
 The separate document reader retains ownership of full-text reviews and
 uncertainty; preparation does not mark documents reviewed or grant eligibility.
 
+The configured stock universe contains 30 issuers, shared by SEC monitoring,
+fundamental preparation and the day/swing/investment research paths:
+AAPL, MSFT, NVDA, AMZN, META, TSLA, AMD, JPM, XOM, GOOG, AVGO, NFLX, ADBE,
+CRM, ORCL, INTC, QCOM, MU, TXN, COST, UNH, HD, MCD, NKE, BA, CAT, CVX, KO,
+PEP and V. SPY and QQQ remain separate ETF instruments. The daily frozen scan
+pool selects at most ten eligible symbols; position and risk caps are
+independent of universe size.
+
+Issuer identifiers are matched to the [SEC ticker registry](https://www.sec.gov/files/company_tickers.json).
+GOOG is the configured Alphabet share class; it does not alias GOOGL. XOM uses
+its current holding-company CIK; missing historical metrics remain explicit.
+Every stock requires healthy SEC coverage. Existing seven direct issuer feeds
+and the two Fed feeds remain configured; optional issuer feeds are not invented
+for the additional companies. Poll intervals remain 300 seconds for SEC and
+120 seconds for feeds. The daily discovery budget is 12,000 requests versus
+about 9,906 scheduled source checks before document requests on a full weekday.
+Broker mappings, costs and native sessions must be verified locally for all
+instruments; the example configuration grants no broker authorization.
+
 ## AI-assisted development
 
 AI reviewers and human contributors are welcome. Start with [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [AI_REVIEW_REQUEST.md](AI_REVIEW_REQUEST.md). Independent AI reviews have identified reproducible research-validation defects and execution-recovery gaps. Each proposed fix should include a failing regression and preserve order ownership, identity checks and risk ceilings.
@@ -56,3 +75,11 @@ Repository issues are requests for development help; opening an issue does not a
 Technical notes describe development behavior and must not be read as deployment or acceptance certificates. This is a sanitized source snapshot, not a backup of a running account.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [PROVENANCE.json](PROVENANCE.json). The bundled trader-skill modules retain their upstream MIT license. A repository-wide license has not yet been selected; public visibility alone is not a blanket reuse grant.
+
+Supplemental Marketaux discovery is shared across the universe and refreshes
+every ten minutes during the exchange session (roughly 45 requests on a normal
+full day including surrounding polling windows). The local ceiling is 95
+requests/day, below the free plan's 100; retries and other consumers of the same
+key can consume additional capacity. Its three-article free response is not
+complete news coverage for 30 stocks. Primary SEC/Fed and configured issuer-feed
+monitoring remain separate.

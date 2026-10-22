@@ -22,7 +22,7 @@ gate evaluations, not six demonstrated executable or profitable trades.
 
 ## Prospective scan change
 
-`research.day_pool_size` defaults to five (valid range one through eight).
+`research.day_pool_size` defaults to ten (valid range one through thirty).
 At the existing 09:45 New York selection window, rank only symbols whose latest
 same-context snapshot is at most 60 seconds old and explicitly marks both the
 broker contract and entry eligibility valid. Blocked high-volatility symbols

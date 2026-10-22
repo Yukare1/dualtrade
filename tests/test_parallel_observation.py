@@ -181,3 +181,13 @@ def test_parallel_demo_observation_sections_pass_independently(cycles, failed_st
         assert bool(cycles.store.get(prefix + 'observation_pass')) is (style != failed_style)
         progress = cycles.store.get(prefix + 'observation:2026-10-23')
         assert progress['failed'] is (style == failed_style)
+
+
+def test_supplemental_news_uses_one_shared_request_each_ten_minutes(cycles):
+    calls = []
+    cycles.collector.providers.news = lambda symbols: calls.append(tuple(symbols)) or []
+    cycles.cycle(cycles.start)
+    cycles.cycle(cycles.start + 300)
+    assert len(calls) == 1
+    cycles.cycle(cycles.start + 600)
+    assert len(calls) == 2

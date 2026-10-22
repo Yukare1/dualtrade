@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from math import isfinite
 
-UNIVERSE = ('AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'TSLA', 'AMD', 'XOM')
+from .universe import STOCKS
+
+UNIVERSE = tuple(STOCKS)
 POLICY_VERSION = 1
 DEFAULTS = {'enabled': True, 'nominal_fraction': .25, 'early_fraction': .125,
             'early_risk': 20., 'normal_score': 70, 'early_score': 60,
