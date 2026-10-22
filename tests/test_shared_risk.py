@@ -111,11 +111,13 @@ def test_swing_activation_has_own_observation_and_no_social_dependency(tmp_path,
     monkeypatch.setattr(cli,'ROOT',tmp_path);monkeypatch.setattr(cli,'source_hash',lambda:'new')
     monkeypatch.setattr(council,'snapshot',lambda *a,**kw:pytest.fail('Swing should not require council'))
     store=Store(tmp_path/'state.db')
-    key=fingerprint({'config_hash':config_hash(cfg),'source_hash':'new'})
+    from dualtrade.decision_revision import observation_context
+    context=fingerprint({'config_hash':config_hash(cfg),'source_hash':'new'})
+    key=observation_context(cfg)
     store.set('investment:observation_pass',{'config_hash':key})
     write_json(tmp_path/'build/acceptance.json',{'passed':True,'source_hash':'new'})
-    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'swing_ready':True})
-    write_json(tmp_path/'bridge/ea-status.json',{'time':NOW,'demo':True,'orders_enabled':True,'version':__version__})
+    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'swing_ready':True,'decision_context':context,'observation_context':key})
+    write_json(tmp_path/'bridge/ea-status.json',{'time':NOW,'demo':True,'orders_enabled':True,'version':__version__,'decision_context':context})
     assert not cli.start_demo(cfg,store,NOW,style='swing')['started']
     store.set('swing:observation_pass',{'config_hash':key})
     assert cli.start_demo(cfg,store,NOW,style='swing')['started']

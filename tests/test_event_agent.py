@@ -21,13 +21,15 @@ def candidate():
 
 
 def eligible():
-    report = {"issues": [], "context": "a" * 64}
+    report = {"issues": [], "context": "a" * 64, 'observation_context':'semantic',
+              'observations':{'day':{'passed':True},'swing':{'passed':False}}}
     ea = {"demo": True, "mode": "demo", "orders_enabled": True,
-          "day_observed": False, "day_observation_waiver_active": True,
+          "day_observed": True, "day_observation_waiver_active": False,
           "day_observation_waiver_until": 1055}
     control = {"mode": "demo", "agent_review_required": True,
                "until": 1055, "styles": ["day"]}
-    return report, ea, {}, control, candidate(), 1005
+    snap = {'observation_context':'semantic','observation_ready':True}
+    return report, ea, snap, control, candidate(), 1005
 
 
 def test_entry_scope_and_expiry_fail_closed():
@@ -35,7 +37,7 @@ def test_entry_scope_and_expiry_fail_closed():
     assert service.entry_allowed(*args)
     for index, key, bad in ((0, "issues", ["EA_STALE"]),
                             (1, "orders_enabled", False),
-                            (1, "day_observation_waiver_active", False),
+                            (1, "day_observed", False),
                             (3, "until", 1005),
                             (3, "styles", ["swing"]),
                             (4, "context", "b" * 64)):
@@ -43,6 +45,43 @@ def test_entry_scope_and_expiry_fail_closed():
         changed[index][key] = bad
         assert not service.entry_allowed(*changed)
     assert not service.entry_allowed(*args[:-1], 1055)
+
+
+@pytest.mark.parametrize('missing',['certificate','snapshot_ready','snapshot_context','native_observed'])
+def test_native_observed_flag_cannot_replace_current_semantic_evidence(missing):
+    report,ea,snap,control,request,now=eligible()
+    if missing=='certificate':report['observations']['day']['passed']=False
+    elif missing=='snapshot_ready':snap['observation_ready']=False
+    elif missing=='snapshot_context':snap['observation_context']='old'
+    else:ea['day_observed']=False
+    assert not service.entry_allowed(report,ea,snap,control,request,now)
+
+
+def test_day_waiver_requires_actual_bound_authorization_and_exact_deadline(monkeypatch):
+    from dualtrade import demo_exception
+    report,ea,snap,control,request,_=eligible()
+    now=demo_exception.START+1;request['expires']=now+55
+    report['observations']['day']['passed']=False;snap['observation_ready']=False;ea['day_observed']=False
+    ea['day_observation_waiver_active']=True
+    ea['day_observation_waiver_until']=control['until']=demo_exception.END
+    monkeypatch.setattr(demo_exception,'active',lambda *args:None)
+    assert not service.entry_allowed(report,ea,snap,control,request,now,{})
+    calls=[]
+    monkeypatch.setattr(demo_exception,'active',lambda *args:calls.append(args) or {'authorization':'verified'})
+    assert service.entry_allowed(report,ea,snap,control,request,now,{})
+    assert calls==[({},now,'day',demo_exception.END)]
+    assert not service.entry_allowed(report,ea,snap,control,request,now)  # no config, no assumed waiver
+    control['until']=demo_exception.END+1
+    assert not service.entry_allowed(report,ea,snap,control,request,now,{})
+
+
+def test_swing_requires_all_current_observation_evidence_and_never_uses_day_waiver():
+    report,ea,snap,control,request,now=eligible()
+    request['style']=1;control['styles']=['swing']
+    report['observations']['swing']['passed']=True;snap['swing_observation_ready']=True;ea['swing_observed']=True
+    assert service.entry_allowed(report,ea,snap,control,request,now)
+    report['observations']['swing']['passed']=False;ea['day_observation_waiver_active']=True
+    assert not service.entry_allowed(report,ea,snap,control,request,now,{})
 
 
 def test_claim_survives_restart_and_prevents_duplicate(tmp_path, monkeypatch):
@@ -83,6 +122,7 @@ def test_observation_readonly_preserves_failed_and_separate_styles(tmp_path, mon
 @pytest.mark.parametrize("mode", ["unavailable", "malformed"])
 def test_model_failure_never_publishes(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(service, "STATE", tmp_path)
+    monkeypatch.setattr(service, 'observation_context', lambda cfg:'semantic')
     db = service.connect_state()
     report, ea, snap, control, request, _ = eligible()
     monkeypatch.setattr(service.time, "time", lambda: 1005)
@@ -107,6 +147,7 @@ def test_model_failure_never_publishes(tmp_path, monkeypatch, mode):
 
 def test_validated_rejection_is_published_once(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "STATE", tmp_path)
+    monkeypatch.setattr(service, 'observation_context', lambda cfg:'semantic')
     db = service.connect_state()
     report, ea, snap, control, request, _ = eligible()
     monkeypatch.setattr(service.time, "time", lambda: 1005)
@@ -118,7 +159,7 @@ def test_validated_rejection_is_published_once(tmp_path, monkeypatch):
         "evidence_path": str(evidence_path), "evidence_sha256": digest})
     review = {"schema": 1, "request_id": request["id"], "context": request["context"],
               "evidence_sha256": digest, "action": "REJECT", "risk_usd": 0,
-              "win_probability": None, "rationale_tr": "Kanıt eksik olduğu için aday mevcut risk kuralları kapsamında reddedildi.",
+              "win_probability": None, "rationale_tr": "Kan�t eksik oldu�u i�in aday mevcut risk kurallar� kapsam�nda reddedildi.",
               "checks": {key: False for key in service.CHECKS}}
     calls = []
     monkeypatch.setattr(service.agent_bridge, "validate_review", lambda *args: calls.append("validate"))
@@ -129,6 +170,29 @@ def test_validated_rejection_is_published_once(tmp_path, monkeypatch):
     assert calls == ["validate", "publish"]
     assert not service.claim(db, request["id"], 1006)
     assert db.execute("SELECT outcome,tokens FROM attempts").fetchone() == ("PUBLISHED_REJECT", 123)
+    db.close()
+
+
+def test_model_or_policy_revision_during_review_blocks_publication(tmp_path,monkeypatch):
+    monkeypatch.setattr(service,'STATE',tmp_path)
+    monkeypatch.setattr(service.time,'time',lambda:1005)
+    revision=['semantic']
+    monkeypatch.setattr(service,'observation_context',lambda cfg:revision[0])
+    report,ea,snap,control,request,_=eligible()
+    evidence=tmp_path/'evidence.json'
+    evidence.write_text(json.dumps({'request':request,'quote':{'time':1005}}))
+    from hashlib import sha256
+    monkeypatch.setattr(service.agent_bridge,'inspect',lambda *args:{'evidence_path':str(evidence),
+        'evidence_sha256':sha256(evidence.read_bytes()).hexdigest()})
+    monkeypatch.setattr(service.agent_bridge,'validate_review',lambda *args:pytest.fail('validated changed mechanism'))
+    monkeypatch.setattr(service.agent_bridge,'publish',lambda *args:pytest.fail('published changed mechanism'))
+    def changed_model(*args):
+        revision[0]='new-model-or-effort'
+        return {'action':'APPROVE'},5
+    db=service.connect_state()
+    result=service.handle({},db,report,ea,snap,control,request,run_model_fn=changed_model)
+    assert 'OBSERVATION_CONTEXT_CHANGED_DURING_REVIEW' in result
+    assert db.execute('SELECT outcome FROM attempts').fetchone()[0]==result
     db.close()
 
 

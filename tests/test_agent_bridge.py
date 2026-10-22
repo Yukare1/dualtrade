@@ -14,10 +14,12 @@ def packet(monkeypatch):
     e={'checked_at':1001,'request':r,'quote':{'time':1001,'bid':99.99,'ask':100}}
     from dualtrade.storage import fingerprint
     e['news_context_sha256']=fingerprint({'ready':True})
+    monkeypatch.setattr('dualtrade.decision_revision.observation_context', lambda cfg: 'decision-one')
+    e['observation_context'] = 'decision-one'
     review={'schema':1,'request_id':r['id'],'context':r['context'],'evidence_sha256':'hash',
-        'action':'APPROVE','rationale_tr':'Destek üzerinde teyitli yapı; maliyetler ve stop mesafesi mevcut sınırlar içinde.',
+        'action':'APPROVE','rationale_tr':'Destek �zerinde teyitli yap�; maliyetler ve stop mesafesi mevcut s�n�rlar i�inde.',
         'checks':{k:True for k in a.CHECKS},'risk_usd':15,'win_probability':None}
-    snap={'time':1001,'ready':True,'contracts':[{'symbol':'AAPL.NAS','verified':True,'entry_allowed':True,'ai_news':{'ready':True}}]}
+    snap={'time':1001,'ready':True,'observation_context':'decision-one','observation_ready':True,'contracts':[{'symbol':'AAPL.NAS','verified':True,'entry_allowed':True,'ai_news':{'ready':True}}]}
     ea={'time':1001,'demo':True,'agent_review_required':True,'decision_context':r['context'],'equity':1000}
     return review,r,e,'hash',snap,ea,load(),1002
 
@@ -48,6 +50,9 @@ def test_approval_is_bound_and_contains_a_risk_ceiling_not_a_fixed_lot(packet):
     lambda p:p[4]['contracts'][0].update(entry_allowed=False),
     lambda p:p[4]['contracts'][0].update(veto_buy=True),
     lambda p:p[2]['request'].update(stop=97),
+    lambda p:p[2].update(observation_context='older-decision'),
+    lambda p:p[4].update(observation_context='older-decision'),
+    lambda p:p[4].update(observation_ready=False),
 ])
 def test_stale_unsafe_or_changed_reviews_are_blocked(packet,mutation):
     # Preserve shared request identity separately: changing evidence must be detected.
@@ -67,6 +72,13 @@ def test_rejection_never_confers_risk(packet):
     assert '|REJECT|0|' in a.validate_review(*p)
     p[0]['risk_usd']=1
     with pytest.raises(ValueError):a.validate_review(*p)
+
+
+def test_native_waiver_flag_alone_cannot_override_current_observation(packet):
+    p=deepcopy(list(packet));p[4]['observation_ready']=False
+    p[5].update(day_observation_waiver_active=True,day_observation_waiver_until=9999)
+    with pytest.raises(ValueError,match='CURRENT_DECISION_OBSERVATION_REQUIRED'):
+        a.validate_review(*p)
 
 
 @pytest.mark.parametrize('bad',['nan','inf','-1','100.1'])
@@ -154,7 +166,7 @@ def test_native_mcp_exit_review_binds_actual_owned_position(tmp_path,monkeypatch
             return {'positions':[position]} if name=='get_trading_open_positions' else {}
     monkeypatch.setattr(mt5_mcp,'NativeMT5',Native)
     review={'schema':1,'action':'CLOSE','nonce':'nonce','context':'a'*64,'ticket':'123','identifier':'456',
-        'symbol':'AAPL.NAS','volume':.2,'rationale_tr':'Destek kırılımıyla mevcut teknik pozisyonun gerekçesi geçersizleşti.'}
+        'symbol':'AAPL.NAS','volume':.2,'rationale_tr':'Destek k�r�l�m�yla mevcut teknik pozisyonun gerek�esi ge�ersizle�ti.'}
     target,text=a.prepare_close(cfg,review,1001)
     assert target==tmp_path/'agent-close.txt' and '|123|456|AAPL.NAS|0.2|' in text
     position['magic']=999
@@ -171,9 +183,15 @@ def test_day_activation_is_independent_of_optional_swing_council(tmp_path,monkey
     monkeypatch.setattr(cli,'ROOT',tmp_path);monkeypatch.setattr(cli,'source_hash',lambda:'source')
     monkeypatch.setattr(council,'snapshot',lambda *a,**kw:pytest.fail('Day must not acquire a swing-only council dependency'))
     store=Store(tmp_path/'s.db')
-    store.set('observation_pass',{'config_hash':fingerprint({'config_hash':config_hash(cfg),'source_hash':'source'})})
+    from dualtrade.decision_revision import observation_context
+    context = fingerprint({'config_hash':config_hash(cfg),'source_hash':'source'})
+    store.set('observation_pass',{'config_hash':observation_context(cfg)})
     write_json(tmp_path/'build/acceptance.json',{'passed':True,'source_hash':'source'})
-    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'ready':True})
-    write_json(tmp_path/'bridge/ea-status.json',{'time':NOW,'demo':True,'orders_enabled':False,'version':__version__})
+    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'ready':True,'decision_context':context,'observation_context':observation_context(cfg)})
+    write_json(tmp_path/'bridge/ea-status.json',{'time':NOW,'demo':True,'orders_enabled':False,'version':__version__,'decision_context':context})
     result=cli.start_demo(cfg,store,NOW,style='day',check_only=True,check_order_permission=False)
     assert result['eligible'] and not (tmp_path/'bridge/control.txt').exists()
+    # A reusable observation never substitutes for current deployed-source proof.
+    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'ready':True,'decision_context':'older-source'})
+    assert 'Current-source native and research context required' in cli.start_demo(
+        cfg,store,NOW,style='day',check_only=True,check_order_permission=False)['issues']

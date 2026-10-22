@@ -14,6 +14,8 @@ def load(path=None):
     if cfg.get("schema") != 1:
         raise ValueError("Unsupported configuration schema")
     cfg['research'].setdefault('context_provider', 'official_agent')
+    from .day_pool import pool_size
+    cfg['research']['day_pool_size'] = pool_size(cfg)
     if cfg['research']['context_provider'] != 'official_agent':
         raise ValueError('Only the official document agent context policy is supported; Reddit is retired')
     r = cfg["risk"]

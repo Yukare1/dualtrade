@@ -36,6 +36,7 @@
     "cooldown_seconds": 3600
   },
   "research": {
+    "day_pool_size": 5,
     "marketaux_daily_limit": 90,
     "alpha_daily_limit": 25,
     "feed_max_age": 1200,

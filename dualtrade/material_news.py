@@ -19,16 +19,44 @@ ISSUER_HOSTS = {'AAPL': {'investor.apple.com', 'www.apple.com'},
  'XOM': {'investor.exxonmobil.com', 'corporate.exxonmobil.com'}}
 
 
+_SCALES = {'trillion': 1e12, 'billion': 1e9, 'bn': 1e9, 'million': 1e6,
+           'mln': 1e6, 'm': 1e6, 'thousand': 1e3, 'k': 1e3}
+_SCALE_PATTERN = '|'.join(_SCALES)
+_AMOUNT_PATTERN = (r'(?P<currency>[$��]|USD|EUR|GBP)?\s*'
+                   r'(?P<amount>-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)'
+                   r'(?:\s*(?P<scale>' + _SCALE_PATTERN + r'))?'
+                   r'(?:\s*(?P<currency_suffix>[$��]|USD|EUR|GBP))?')
+_EVIDENCE_AMOUNT = re.compile(r'(?<![\w.,$��+\-])' + _AMOUNT_PATTERN +
+                              r'(?!\w|[.,]\d|%)', re.I)
+
+
 def numeric_anchor(anchor, value, unit='USD'):
-    if not isinstance(anchor,str) or not number(value): return False
-    match=re.fullmatch(r'\s*[$€£]?\s*(-?\d+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|mln|m|k)?\s*',anchor.lower().replace(',',''))
-    if not match:return False
-    scales={'trillion':1e12,'billion':1e9,'bn':1e9,'million':1e6,'mln':1e6,'m':1e6,'thousand':1e3,'k':1e3}
-    parsed=float(match[1])
-    if match[2]:
-        unit_scale=next((scale for name,scale in scales.items() if re.search(r'\b'+name+r'\b',unit.lower())),1)
-        parsed=parsed*scales[match[2]]/unit_scale
-    return abs(parsed-value)<=max(1e-9,abs(value)*1e-9)
+    if not isinstance(anchor, str) or not isinstance(unit, str) or not number(value):
+        return False
+    match = re.fullmatch(_AMOUNT_PATTERN, anchor.strip(), re.I)
+    target = re.fullmatch(r'(USD|EUR|GBP)(?:\s+(' + _SCALE_PATTERN + r'))?', unit, re.I)
+    if not match or not target:
+        return False
+    for currency in (match['currency'], match['currency_suffix']):
+        if currency:
+            currency = {'$': 'USD', '�': 'EUR', '�': 'GBP'}.get(currency, currency.upper())
+            if currency != target[1].upper():
+                return False
+    parsed = float(match['amount'].replace(',', ''))
+    if match['scale']:
+        parsed *= _SCALES[match['scale'].lower()] / _SCALES.get((target[2] or '').lower(), 1)
+    return abs(parsed - value) <= max(1e-9, abs(value) * 1e-9)
+
+
+def numeric_evidence(anchor, value, unit, quote):
+    """Require the complete source amount, including its currency and scale.
+
+    A bare number can inherit the review's declared unit, but an explicit
+    currency or scale in the source must not be silently truncated away.
+    """
+    if not isinstance(quote, str) or not numeric_anchor(anchor, value, unit):
+        return False
+    return any(m.group().strip() == anchor.strip() for m in _EVIDENCE_AMOUNT.finditer(quote))
 
 
 def primary_url(url, ticker, cik):
@@ -62,7 +90,7 @@ def verify_review(review, cfg, providers, now):
     for field in ('before', 'after', 'revenue_impact'):
         if field in review:
             anchor = review.get(field+'_text')
-            if not numeric_anchor(anchor,review[field],review.get('unit','USD') if field!='revenue_impact' else 'USD') or anchor not in quote:
+            if not numeric_evidence(anchor,review[field],review.get('unit','USD') if field!='revenue_impact' else 'USD',quote):
                 raise ValueError('ECONOMIC_INPUT_WITHOUT_PRIMARY_ANCHOR')
     if review.get('kind') == 'guidance' and not (review.get('period') and review.get('unit') and review.get('metric') in ('net_income', 'fcf')):
         raise ValueError('COMPARABLE_GUIDANCE_REQUIRED')

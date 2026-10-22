@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .config import ROOT, load, bridge, config_hash
 from .storage import fingerprint, read_json, write_json, process_lock
@@ -109,7 +109,56 @@ def broker_timestamp(value, offset):
     return t.timestamp() if t.tzinfo else t.replace(tzinfo=timezone.utc).timestamp()-offset
 
 
-def closed_history(rows, offset, seconds, now, count):
+def history_session_windows(cfg, symbol, offset, now):
+    """Recent verified sessions only; the current clock is not a historical zone.
+
+    Broker schedules are server wall times, as in broker.inspect. Across common
+    US/European clock-change weekends, validate only the current session rather
+    than applying today's offset to prior-session clocks. Every requested frame
+    still needs a completed current-session bucket. Older bars remain context.
+    """
+    from . import calendar as cal
+    from .broker import native_sessions
+    native = native_sessions(bridge(cfg) / 'broker-native.txt', now)
+    if native is None or native[0] != offset or symbol not in native[1]:
+        raise ValueError('HISTORY_SESSION_CLOCK_UNAVAILABLE')
+    today = cal.now_ny(now).date()
+    prior = cal.previous_session(today)
+    day = prior
+    ambiguous_prior_offset = False
+    previous_offset = datetime.combine(day, datetime.min.time(), cal.NY).utcoffset()
+    while day <= today:
+        local_offset = datetime.combine(day, datetime.min.time(), cal.NY).utcoffset()
+        # Do not infer the broker timezone from a single current UTC offset.
+        # Last Sundays in March/October also need historical clock evidence.
+        possible_broker_change = (day > prior and day.weekday() == 6 and
+                                  day.month in (3, 10) and (day + timedelta(days=7)).month != day.month)
+        if local_offset != previous_offset or possible_broker_change:
+            ambiguous_prior_offset = True
+        previous_offset = local_offset
+        day += timedelta(days=1)
+    windows = []
+    for day in ((today,) if ambiguous_prior_offset else (prior, today)):
+        exchange = cal.session(day)
+        if exchange is None:
+            continue
+        hours = native[1][symbol].get((day.weekday() + 1) % 7)
+        if not isinstance(hours, list) or len(hours) != 1:
+            raise ValueError('HISTORY_SESSION_SCHEDULE_UNAVAILABLE')
+        start, end = hours[0]
+        ny_offset = int(datetime.combine(day, datetime.min.time(), cal.NY).utcoffset().total_seconds())
+        local_start, local_end = start - offset + ny_offset, end - offset + ny_offset
+        if not 0 <= local_start < local_end < 86400:
+            raise ValueError('HISTORY_SESSION_SCHEDULE_UNSUPPORTED')
+        midnight = datetime.combine(day, datetime.min.time(), cal.NY).timestamp()
+        opening, closing = max(exchange[0], midnight + local_start), min(exchange[1], midnight + local_end)
+        if opening >= closing:
+            raise ValueError('HISTORY_SESSION_SCHEDULE_UNSUPPORTED')
+        windows.append((opening, closing))
+    return windows
+
+
+def closed_history(rows, offset, seconds, now, count, *, session_windows=None):
     bars=[]
     for row in rows:
         stamp=broker_timestamp(row['time'],offset)
@@ -121,11 +170,28 @@ def closed_history(rows, offset, seconds, now, count):
     bars.sort(key=lambda r:r['time'])
     if len(bars)<count or len({b['time'] for b in bars})!=len(bars):
         raise ValueError('CLOSED_HISTORY_MISSING_OR_DUPLICATED')
+    if session_windows is not None:
+        expected = set()
+        for opening, closing in session_windows:
+            if not number(opening) or not number(closing) or not opening < closing:
+                raise ValueError('HISTORY_SESSION_SCHEDULE_UNSUPPORTED')
+            bucket = math.floor((opening + offset) / seconds) * seconds - offset
+            while bucket < closing:
+                if bucket + seconds > opening and bucket + seconds <= now:
+                    expected.add(int(bucket))
+                bucket += seconds
+        if not expected or bars[-1]['time'] != max(expected):
+            raise ValueError('CLOSED_HISTORY_STALE')
+        actual = {b['time'] for b in bars if min(expected) <= b['time'] <= max(expected)}
+        if actual != expected:
+            raise ValueError('CLOSED_HISTORY_SESSION_GAP')
     return bars[-count:]
 
 
 def inspect(cfg, identity, now):
     r = request(cfg, identity); request_live(r, cfg, now)
+    from .decision_revision import observation_context
+    observed_context = observation_context(cfg)
     from .mt5_mcp import NativeMT5
     m=NativeMT5();m.call('get_workspace_info');m.verify_demo()
     snap=read_json(bridge(cfg)/'snapshot.json',{})
@@ -133,21 +199,26 @@ def inspect(cfg, identity, now):
     quote=m.call('get_marketwatch_symbols',{'symbol':r['symbol'],'limit':1})['symbols']
     if len(quote)!=1 or quote[0]['symbol']!=r['symbol']:raise ValueError('EXACT_QUOTE_REQUIRED')
     q=quote[0];offset=contract['server_offset'];frames={}
+    session_windows = history_session_windows(cfg, r['symbol'], offset, now)
     start=datetime.fromtimestamp(now+offset-90*86400,timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
     end=datetime.fromtimestamp(now+offset,timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
     for name,seconds,count in (('M15',900,64),('H1',3600,48),('H4',14400,48)):
         data=m.call('get_chart_history',{'symbol':r['symbol'],'period':name,
             'datetime_from':start,'datetime_to':end,'limit':count+4})
         if data.get('ok') is not True:raise ValueError('BROKER_HISTORY_UNAVAILABLE')
-        frames[name]=closed_history(data['history'],offset,seconds,now,count)
-    evidence={'schema':1,'checked_at':now,'request':r,
+        frames[name]=closed_history(data['history'],offset,seconds,now,count,
+                                    session_windows=session_windows)
+    evidence={'schema':1,'checked_at':now,'request':r,'observation_context':observed_context,
         'quote':{'time':broker_timestamp(q['update_time'],offset),'bid':q['bid'],'ask':q['ask']},
         'spec':{k:q[k] for k in ('volume_min','volume_max','volume_step','contract_size','tick_size')},
         'contract':{k:contract.get(k) for k in ('previous_high','previous_low','entry_allowed','earnings_close','earnings_end','sec_close_until','veto_buy','veto_sell','ai_news')},
-        'closed_bars_utc':frames,'win_probability':None}
+        'closed_bars_utc':frames,'history_session_windows_utc':session_windows,
+        'win_probability':None}
     evidence['news_context_sha256'] = fingerprint(contract.get('ai_news', {}))
     # No partially completed, expired inspection is handed to the reviewer.
     finished=time.time(); request_live(r,cfg,finished)
+    if snap.get('observation_context') != observed_context or observation_context(cfg) != observed_context:
+        raise ValueError('DECISION_MECHANISM_CHANGED_SINCE_SNAPSHOT')
     if not 0 <= finished-evidence['quote']['time'] <= 30:
         raise ValueError('STALE_EXECUTABLE_QUOTE')
     path=ROOT/'runtime/agent-evidence'/(identity+'.json');write_json(path,evidence)
@@ -170,6 +241,18 @@ def validate_review(review, r, evidence, evidence_hash, snap, ea, cfg, now):
     budget = review.get('risk_usd', 0)
     if not number(budget): raise ValueError('INVALID_REVIEW_RISK')
     if review['action'] == 'APPROVE':
+        from .decision_revision import observation_context
+        observed_context = observation_context(cfg)
+        if (evidence.get('observation_context') != observed_context or
+                snap.get('observation_context') != observed_context):
+            raise ValueError('DECISION_MECHANISM_CHANGED_SINCE_INSPECTION')
+        observed = snap.get('observation_ready' if r['style'] == 0 else 'swing_observation_ready') is True
+        if not observed:
+            from .demo_exception import active
+            waived = (r['style'] == 0 and ea.get('day_observation_waiver_active') is True and
+                      active(cfg, now, 'day', ea.get('day_observation_waiver_until')) is not None)
+            if not waived:
+                raise ValueError('CURRENT_DECISION_OBSERVATION_REQUIRED')
         if set(review.get('checks', {})) != set(CHECKS) or any(review['checks'][k] is not True for k in CHECKS):
             raise ValueError('ALL_PRETRADE_CHECKS_REQUIRED')
         if not 0 < budget <= min(r['risk_ceiling'], 40, ea.get('equity', 0) * .04):

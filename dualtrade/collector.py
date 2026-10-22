@@ -122,8 +122,12 @@ class Collector:
             if item["last"] and now - item["last"] > 30: item["failed"] = True
             if valid and item["last"]: item["seconds"] += min(30, now - item["last"])
             item["last"] = now
-        if now >= finish and item["last"] >= finish - 15 and item["started"] <= start + 15 and not item["failed"] and item["seconds"] >= finish - start - 30:
-            self.store.set("observation_pass", {"date": cal.now_ny(now).date().isoformat(), "config_hash": cfg_hash, "completed_at": now})
+        # A post-window caller must never certify a revision that was not
+        # observed, even when the preceding revision completed the session.
+        if (now >= finish and valid and item["config_hash"] == cfg_hash and
+                item["last"] >= finish - 15 and item["started"] <= start + 15 and
+                not item["failed"] and item["seconds"] >= finish - start - 30):
+            self.store.set("observation_pass", {"schema": 2, "binding": "decision_revision", "date": cal.now_ny(now).date().isoformat(), "config_hash": item["config_hash"], "completed_at": now})
         self.store.set(key, item)
 
     def previous_levels(self, ticker, mapping, today):
@@ -168,13 +172,34 @@ class Collector:
         if len(inspected['positions']) > 3: snapshot["issues"].append("POSITION_LIMIT_EXCEEDED")
         pool_key = "pool:" + today.isoformat()
         pool = self.store.get(pool_key)
+        from .day_pool import pool_size, select as select_day_pool
+        scan_limit = pool_size(cfg)
         if pool is None and session and now >= session[0] + 900:
             # A late restart must not retrospectively pick a better research pool.
-            ranked = self.broker.rank(mappings) if now <= session[0]+960 else []
-            pool = (held + [t for t in ranked if t not in held])[:3]
-            self.store.set(pool_key, pool)
-        pool = list(dict.fromkeys(held + (pool or [])))[:3]
+            selection_time = time.time()
+            if session[0]+900 <= selection_time <= session[0]+960:
+                from .cli import source_hash
+                ranked = self.broker.rank(mappings)
+                previous_selection = read_json(self.directory/'snapshot.json', {})
+                selection_context = fingerprint({'config_hash': cfg_hash, 'source_hash': source_hash()})
+                # Broker IPC, file reads and hashing can consume the selection
+                # window. Check the real clock after all of that work, including
+                # eligibility age; cycle-start time cannot authorize a late pool.
+                selection_time = time.time()
+                if session[0]+900 <= selection_time <= session[0]+960:
+                    pool = select_day_pool(ranked, held, previous_selection,
+                                           selection_time, selection_context, scan_limit)
+                elif selection_time > session[0]+960:
+                    pool = list(dict.fromkeys(held))
+            elif selection_time > session[0]+960:
+                pool = list(dict.fromkeys(held))
+            if pool is not None:
+                self.store.set(pool_key, pool)
+        # A frozen selection cannot gain replacement symbols later in the day.
+        # Retain holdings even if a user later reduces the scanning limit.
+        pool = list(dict.fromkeys(held + (pool or [])))
         snapshot["pool"] = pool
+        snapshot['day_pool_limit'] = scan_limit
         if session and now>session[0]+960 and not pool: snapshot["issues"].append("MISSED_0945_POOL_SELECTION")
         active = session and session[0] - 3600 <= now <= session[1] + 300
         from .investment import UNIVERSE
@@ -359,8 +384,10 @@ class Collector:
             snapshot['issues'].append('CYCLE_TOO_SLOW')
         ea_ok = self.ea_healthy(ea, now)
         from .cli import source_hash
-        observation_key=fingerprint({"config_hash":cfg_hash,"source_hash":source_hash()})
-        snapshot['decision_context'] = observation_key
+        from .decision_revision import observation_context
+        snapshot['decision_context'] = fingerprint({"config_hash":cfg_hash,"source_hash":source_hash()})
+        observation_key = observation_context(cfg)
+        snapshot['observation_context'] = observation_key
         # The single collector observes real health while either research-only
         # or demo execution runs; entry permission never certifies observation.
         # Politician evidence is a swing-only optional veto, not a day source.

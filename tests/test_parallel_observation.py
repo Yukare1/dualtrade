@@ -19,7 +19,7 @@ def cycles(tmp_path, monkeypatch):
     store = Store(tmp_path / 'state.sqlite3')
     session = cal.session(date(2026, 10, 23))
     start, finish = session[0] + 900, session[1] - 300
-    clock = {'now': start, 'source': 'source-one', 'ea_ok': True,
+    clock = {'now': start, 'source': 'source-one', 'decision': 'decision-one', 'ea_ok': True,
              'day': True, 'swing': True, 'investment': True}
     directory = tmp_path / 'bridge'
     control = {'mode': 'demo', 'styles': ['day'], 'until': finish}
@@ -38,6 +38,7 @@ def cycles(tmp_path, monkeypatch):
     collector = Collector(cfg, broker=broker, providers=providers, store=store)
     monkeypatch.setattr('dualtrade.collector.time.time', lambda: clock['now'])
     monkeypatch.setattr('dualtrade.cli.source_hash', lambda: clock['source'])
+    monkeypatch.setattr('dualtrade.decision_revision.observation_context', lambda cfg: clock['decision'])
     monkeypatch.setattr('dualtrade.ai_news.read_state', lambda *a: {})
     monkeypatch.setattr('dualtrade.ai_news.apply',
                         lambda snapshot, *a: snapshot.update(ready=clock['day']))
@@ -96,7 +97,7 @@ def test_demo_cycles_observe_full_real_window_without_changing_controls_or_risk(
         prefix = '' if style == 'day' else style + ':'
         passed = cycles.store.get(prefix + 'observation_pass')
         progress = cycles.store.get(prefix + 'observation:2026-10-23')
-        assert passed['config_hash'] == final['decision_context']
+        assert passed['config_hash'] == final['observation_context']
         assert passed['completed_at'] == cycles.finish
         assert progress['started'] == cycles.start and not progress['failed']
         assert progress['seconds'] == cycles.finish - cycles.start
@@ -130,7 +131,7 @@ def test_observe_to_demo_transition_keeps_single_observation_duration(cycles):
     assert progress['seconds'] == cycles.finish - cycles.start
 
 
-@pytest.mark.parametrize('failure', ['previous_failure', 'source_change', 'gap', 'ea_unhealthy'])
+@pytest.mark.parametrize('failure', ['previous_failure', 'decision_change', 'gap', 'ea_unhealthy'])
 def test_demo_cycles_never_certify_invalid_evidence(cycles, failure):
     cycles.cycle(cycles.start)
     if failure == 'previous_failure':
@@ -139,8 +140,9 @@ def test_demo_cycles_never_certify_invalid_evidence(cycles, failure):
         cycles.store.set(key, {**cycles.store.get(key), 'failed': True})
     for stamp in range(cycles.start + 30, cycles.finish + 1, 30):
         if stamp == cycles.start + 60:
-            if failure == 'source_change':
+            if failure == 'decision_change':
                 cycles.clock['source'] = 'source-two'
+                cycles.clock['decision'] = 'decision-two'
             elif failure == 'gap':
                 continue
             elif failure == 'ea_unhealthy':
@@ -152,6 +154,19 @@ def test_demo_cycles_never_certify_invalid_evidence(cycles, failure):
     assert cycles.store.get('observation_pass') is None
     assert cycles.store.get('observation:2026-10-23')['failed']
     assert cycles.collector.store is cycles.store
+
+
+def test_infrastructure_revision_keeps_observation_but_changes_execution_context(cycles):
+    first = cycles.cycle(cycles.start)
+    cycles.clock['source'] = 'source-two'
+    final = run_window(cycles)
+    assert final['observation_ready']
+    assert final['observation_context'] == first['observation_context']
+    assert final['decision_context'] != first['decision_context']
+    certificate = cycles.store.get('observation_pass')
+    later = cycles.cycle(cycles.finish + 60)
+    assert later['observation_ready']
+    assert cycles.store.get('observation_pass')['config_hash'] == certificate['config_hash']
 
 
 @pytest.mark.parametrize('failed_style', ['day', 'swing', 'investment'])

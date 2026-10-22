@@ -46,7 +46,9 @@ def start_demo(cfg, store, now=None, style='all', *, check_only=False, check_ord
     ea = read_json(directory / "ea-status.json", {})
     functional = read_json(ROOT / "build/acceptance.json", {})
     issues = []
-    observation_key=fingerprint({"config_hash":config_hash(cfg),"source_hash":source_hash()})
+    from .decision_revision import observation_context
+    observation_key = observation_context(cfg)
+    execution_context = fingerprint({"config_hash":config_hash(cfg),"source_hash":source_hash()})
     waiver = None
     if observation_waiver:
         from .demo_exception import active
@@ -57,6 +59,10 @@ def start_demo(cfg, store, now=None, style='all', *, check_only=False, check_ord
         observed = observation if selected == 'day' else store.get(selected+':observation_pass', {})
         if observed.get('config_hash') != observation_key and not (selected == 'day' and waiver): issues.append(selected+': Full healthy observation session required')
     if not functional.get("passed") or functional.get("source_hash") != source_hash(): issues.append("Current-source functional acceptance required")
+    if snap.get('decision_context') != execution_context or ea.get('decision_context') != execution_context:
+        issues.append('Current-source native and research context required')
+    if snap.get('observation_context') != observation_key:
+        issues.append('Current decision mechanism research context required')
     if not 0 <= now - snap.get("time", 0) <= 60: issues.append("Research snapshot unavailable or stale")
     for selected in styles:
         if not snap.get('ready' if selected == 'day' else selected+'_ready'): issues.append(selected+': Research blocked')

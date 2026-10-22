@@ -12,7 +12,7 @@ import sqlite3
 
 from .config import ROOT
 from .investment import number
-from .material_news import numeric_anchor
+from .material_news import numeric_evidence
 from .storage import fingerprint
 
 VERSION = 1
@@ -110,7 +110,7 @@ def validate_assessment(review, event, documents, receipts, now):
             fields, unit = ('revenue_impact',), 'USD'
         for field in fields:
             anchor = e.get(field + '_text')
-            if not numeric_anchor(anchor, e.get(field), unit) or anchor not in quote or e[field] < 0:
+            if not numeric_evidence(anchor, e.get(field), unit, quote) or e[field] < 0:
                 raise ValueError('AI_ECONOMIC_NUMBER_WITHOUT_ANCHOR')
         if e['kind'] == 'guidance' and quote.find(e['before_text']) >= quote.find(e['after_text']):
             raise ValueError('AI_GUIDANCE_COMPARISON_ORDER_INVALID')
