@@ -20,6 +20,7 @@ def production_code():
     funcs.update(functions(include/'DualRisk.mqh'))
     funcs.update(functions(include/'DualSwing.mqh'))
     funcs.update(functions(include/'DualAgent.mqh'))
+    funcs.update(functions(include/'DualExecution.mqh'))
     refs={'ArrayResize':[0]}; signatures={}
     for name,(kind,params,body) in funcs.items():
         parameters=[];indices=[]

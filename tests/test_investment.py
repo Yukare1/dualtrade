@@ -108,7 +108,7 @@ def test_event_source_identity_and_quote_review():
     quote='Apple increases annual net income guidance from 100 to 110 million for fiscal 2026.'
     review={'ticker':'AAPL','reviewed':True,'reviewer':'Test fixture','source':'https://investor.apple.com/news/test.html',
         'published_at':NOW-100,'quote':quote,'kind':'guidance','metric':'net_income','period':'2026','unit':'USD million',
-        'before':100,'after':110,'before_text':'100','after_text':'110','event_key':'guidance:2026', 'reference_price':999}
+        'before':100,'after':110,'before_text':'100','after_text':'110 million','event_key':'guidance:2026', 'reference_price':999}
     response=N(content=quote.encode(),text=quote)
     providers=N(request=lambda *a,**k:response,key=lambda name:'Test test@example.test')
     verified=verify_review(review,cfg,providers,NOW)
@@ -193,12 +193,14 @@ def test_investment_activation_does_not_require_reddit_or_council(tmp_path,monke
     def unavailable(*a,**k): raise AssertionError('Investment must not call the required council gate')
     monkeypatch.setattr(council,'snapshot',unavailable)
     store=Store(tmp_path/'state.db')
-    key=fingerprint({'config_hash':config_hash(cfg),'source_hash':'current'})
+    from dualtrade.decision_revision import observation_context
+    context=fingerprint({'config_hash':config_hash(cfg),'source_hash':'current'})
+    key=observation_context(cfg)
     store.set('investment:observation_pass',{'config_hash':key})
     write_json(tmp_path/'build/acceptance.json',{'passed':True,'source_hash':'current'})
-    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'ready':False,'investment_ready':True})
+    write_json(tmp_path/'bridge/snapshot.json',{'time':NOW,'ready':False,'investment_ready':True,'decision_context':context,'observation_context':key})
     from dualtrade import __version__
-    write_json(tmp_path/'bridge/ea-status.json',{'time':NOW,'demo':True,'orders_enabled':True,'version':__version__})
+    write_json(tmp_path/'bridge/ea-status.json',{'time':NOW,'demo':True,'orders_enabled':True,'version':__version__,'decision_context':context})
     assert cli.start_demo(cfg,store,NOW,style='investment')['started']
     assert json.loads((tmp_path/'bridge/control.json').read_text())['styles']==['investment']
 

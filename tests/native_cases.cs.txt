@@ -184,5 +184,26 @@ static void Main() {
     Check("h4_retest_not_expired_after_two_bars",context.retest_dir==1);
     context.retest_bar=b[12].time; FXEvaluateStrategies(settings,b,z,ref context,ref c);
     Check("h4_retest_expires_after_eight_bars",context.retest_dir==0);
+    // Actual session gaps consume no candles. Test both sides of the eight-bar boundary.
+    b=Bars(); for(int i=0;i<b.Length;i++) b[i].time=2000000-i*14400-(i>=3 ? 172800 : 0);
+    context.retest_dir=1;context.retest_bar=b[9].time;b[1].close=11;c=new FXCandidate[0];
+    FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("h4_weekend_retest_survives_eight_completed_bars",context.retest_dir==1);
+    context.retest_bar=b[10].time;FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("h4_weekend_retest_expires_on_ninth_bar",context.retest_dir==0);
+    int[] rejected={10004,10006,10007,10013,10014,10015,10016,10017,10018,10019,10020,10021,
+       10022,10024,10026,10027,10030,10032,10033,10034,10035,10038,10040,10042,10043,10044,10045,10046};
+    foreach(int code in rejected) Check("definitive_no_fill_"+code,DTDefinitiveNoFill(code));
+    int[] uncertain={0,10008,10009,10010,10011,10012,10023,10028,10029,10031,10039,99999};
+    foreach(int code in uncertain) Check("uncertain_or_accepted_retains_intent_"+code,!DTDefinitiveNoFill(code));
+    Check("partial_terminal_fill_allows_only_residual",DTReductionOutcome(true,.8,.5,.1,true,false,false)==2);
+    Check("partial_unconfirmed_fill_stays_blocked",DTReductionOutcome(true,.8,.5,.1,false,false,false)==0);
+    Check("partial_pending_order_stays_blocked",DTReductionOutcome(true,.8,.5,.1,true,true,false)==0);
+    Check("target_reached_without_terminal_order_stays_blocked",DTReductionOutcome(true,.5,.5,.1,false,false,false)==0);
+    Check("target_reached_after_terminal_order_completes",DTReductionOutcome(true,.5,.5,.1,true,false,false)==1);
+    Check("missing_position_without_history_stays_blocked",DTReductionOutcome(false,0,.5,.1,true,false,false)==0);
+    Check("verified_closed_position_completes",DTReductionOutcome(false,0,.5,.1,false,false,true)==1);
+    Check("verified_closed_position_pending_order_stays_blocked",DTReductionOutcome(false,0,.5,.1,true,true,true)==0);
+    Check("invalid_reduction_target_stays_blocked",DTReductionOutcome(true,.8,Double.NaN,.1,true,false,false)==0);
 }
 }

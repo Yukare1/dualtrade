@@ -16,8 +16,10 @@ def main():
     source = service.source_hash()
     context = service.fingerprint({"config_hash": service.config_hash(cfg), "source_hash": source})
     core = service.read_json(service.ROOT / "build" / "acceptance.json", {})
-    deployment = service.read_json(service.ROOT / "runtime" / "agent-deployment.json", {})
-    parallel = service.read_json(service.ROOT / "runtime" / "reports" / "parallel-observation-deployment.json", {})
+    directory = service.bridge(cfg)
+    ea = service.read_json(directory / 'ea-status.json', {})
+    snap = service.read_json(directory / 'snapshot.json', {})
+    deployment_problems = service.deployment_issues(cfg, source, context, ea, snap, time.time())
     events = service.STATE / "events.jsonl"
     smoke = False
     if events.exists():
@@ -28,11 +30,10 @@ def main():
             except json.JSONDecodeError:
                 pass
     valid = (core.get("passed") is True and core.get("source_hash") == source and
-             deployment.get("source_hash") == source and
-             parallel.get("source_hash") == source and parallel.get("context") == context and
+             not deployment_problems and
              smoke)
     if not valid:
-        raise SystemExit("Current core acceptance, deployment and Codex smoke are required")
+        raise SystemExit("Current core acceptance, verified deployment and Codex smoke are required: " + ', '.join(deployment_problems))
     receipt = {"passed": True, "checked_at": time.time(), "source_hash": source,
                "context": context, "service_fingerprint": service.service_fingerprint(),
                "validation": ["event-agent Python tests", "current native acceptance", "synthetic CLI REJECT"]}

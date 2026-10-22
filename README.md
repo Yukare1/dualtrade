@@ -28,7 +28,7 @@ Install from `pyproject.toml` for a fresh environment. `requirements.lock.txt` r
 
 For an isolated demo setup, copy `config.example.json` to ignored `config.local.json`, configure your own terminal and demo identity, and follow [CREDENTIAL_SETUP.md](CREDENTIAL_SETUP.md). Keep order permission disabled while configuring. Provider keys belong in local environment variables or the local encrypted vault. No account identity, credentials, deployed binary, observations or activation evidence are included in this repository.
 
-Full functional acceptance additionally requires local compilation, native Strategy Tester integration, current source/configuration evidence and a complete healthy observation session. `scripts/check.ps1 -NativeIntegration` is a broker-environment workflow, not the ordinary CI command. A passing unit suite does not enable trading or establish profitability. The historical, date-bound demo exception implemented in source carries no authorization for a new installation.
+Full functional acceptance additionally requires local compilation, native Strategy Tester integration and current source/configuration evidence. Activation also needs a complete healthy observation bound to the decision mechanism; proven non-decision maintenance can reuse that observation while still requiring current deployment checks. See [TUNING.md](TUNING.md). `scripts/check.ps1 -NativeIntegration` is a broker-environment workflow, not the ordinary CI command. A passing unit suite does not enable trading or establish profitability. The historical, date-bound demo exception implemented in source carries no authorization for a new installation.
 
 ## AI-assisted development
 

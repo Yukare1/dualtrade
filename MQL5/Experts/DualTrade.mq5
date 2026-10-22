@@ -7,6 +7,7 @@
 #include "../Include/DualRisk.mqh"
 #include "../Include/DualSwing.mqh"
 #include "../Include/DualAgent.mqh"
+#include "../Include/DualExecution.mqh"
 
 #ifdef DUALTRADE_TESTER
 input string BridgeFolder="DualTradeTests";
@@ -44,6 +45,8 @@ struct Contract
 struct Engine
 {
    string symbol;
+   string diagnostic_reasons;
+   datetime diagnostic_bar;
    int style,atr,adx,rsi,ma,bands,trend_atr,trend_adx,fast,slow,exhaust,context_atr;
    ENUM_TIMEFRAMES tf,trend;
 };
@@ -568,6 +571,7 @@ double PaidCosts(ulong id)
 }
 void Reconcile()
 {
+   ReconcileReductions();
    MigrateInvestmentIntent();
    for(int style=0;style<3;style++)
    {
@@ -628,6 +632,58 @@ void Reconcile()
       // No evidence of a final outcome: keep blocking, never blindly retry.
    }
 }
+// Reconcile only recorded reduction orders. An unknown timeout with no order
+// identity stays blocked; a terminal partial fill may retry only its remainder.
+void ReconcileReductions()
+{
+   if(Get("reduction_pending")<=0)return;
+   bool tracked=false,unresolved=false;
+   for(int g=0;g<GlobalVariablesTotal();g++)
+   {
+      string name=GlobalVariableName(g);
+      if(StringFind(name,prefix+"p.")!=0 || StringLen(name)<5 || StringSubstr(name,StringLen(name)-5)!=".sent")continue;
+      string key=StringSubstr(name,StringLen(prefix),StringLen(name)-StringLen(prefix)-5);
+      int marker=StringFind(key,".red.");if(marker<2)continue;
+      tracked=true;if(Get(key+".sent")<=0)continue;
+      ulong id=(ulong)StringToInteger(StringSubstr(key,2,marker-2));
+      bool opened=false,pending=false,final_order=false,closed=false;
+      double volume=0,step=Get(key+".step",0);string symbol="";long position_type=-1;
+      for(int p=PositionsTotal()-1;p>=0;p--)
+         if(PositionGetTicket(p)>0 && (ulong)PositionGetInteger(POSITION_IDENTIFIER)==id && Ours((ulong)PositionGetInteger(POSITION_MAGIC)))
+         {opened=true;volume=PositionGetDouble(POSITION_VOLUME);symbol=PositionGetString(POSITION_SYMBOL);position_type=PositionGetInteger(POSITION_TYPE);step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);break;}
+      for(int o=OrdersTotal()-1;o>=0;o--)
+         if(OrderGetTicket(o)>0 && (ulong)OrderGetInteger(ORDER_POSITION_ID)==id)pending=true;
+      if(HistorySelectByPosition(id))
+      {
+         double filled=0,exited=0;bool owned=false;
+         for(int d=0;d<HistoryDealsTotal();d++)
+         {
+            ulong deal=HistoryDealGetTicket(d);long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+            if(entry==DEAL_ENTRY_IN){filled+=HistoryDealGetDouble(deal,DEAL_VOLUME);owned=owned || Ours((ulong)HistoryDealGetInteger(deal,DEAL_MAGIC));}
+            if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY)exited+=HistoryDealGetDouble(deal,DEAL_VOLUME);
+            if(symbol=="")symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
+         }
+         closed=owned && filled>0 && exited+1e-8>=filled;
+         if(step<=0 && symbol!="")step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      }
+      ulong order=(ulong)Get(key+".order");
+      if(order>0 && HistoryOrderSelect(order) && (ulong)HistoryOrderGetInteger(order,ORDER_POSITION_ID)==id &&
+         Ours((ulong)HistoryOrderGetInteger(order,ORDER_MAGIC)) && HistoryOrderGetInteger(order,ORDER_TIME_SETUP)>=Get(key+".srv",1e100)-2)
+      {
+         long state=HistoryOrderGetInteger(order,ORDER_STATE),type=HistoryOrderGetInteger(order,ORDER_TYPE);
+         bool close_side=!opened || type==(position_type==POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY);
+         final_order=close_side && (state==ORDER_STATE_FILLED || state==ORDER_STATE_CANCELED || state==ORDER_STATE_REJECTED || state==ORDER_STATE_EXPIRED);
+      }
+      int outcome=DTReductionOutcome(opened,volume,Get(key+".target",-1),step,final_order,pending,closed);
+      if(outcome>0)
+      {
+         Set(key+".sent",0);if(outcome==1)Set(key+".done",1);
+         Audit("REDUCTION_RECONCILED",symbol,outcome==1 ? "TARGET_OR_POSITION_CLOSED" : "TERMINAL_ORDER_RESIDUAL",id,order,volume);
+      }
+      else unresolved=true;
+   }
+   if(tracked){Set("reduction_pending",unresolved ? 1 : 0);GlobalVariablesFlush();}
+}
 // Partial reductions use a durable target volume, never repeated "half" orders.
 void ReduceInvestment(ulong ticket,double target,string event)
 {
@@ -638,18 +694,20 @@ void ReduceInvestment(ulong ticket,double target,string event)
    double volume=PositionGetDouble(POSITION_VOLUME),minimum=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN),step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
    if(Get(key+".target",-1)<0)Set(key+".target",target);
    target=Get(key+".target");
-   if(volume<=target+step/2){Set(key+".done",1);Set(key+".sent",0);Set("reduction_pending",0);return;}
    if(Get(key+".sent")>0)return; // Ambiguous partial fill needs reconciliation, not a blind retry.
+   if(volume<=target+step/2){Set(key+".done",1);return;}
+   if(Get("reduction_pending")>0)return; // A different event cannot overlap an unresolved reduction.
    if(target<minimum){CloseTicket(ticket,"INVESTMENT_REDUCE_MIN_LOT");return;}
    double amount=FloorVolume(volume-target,minimum,volume,step);
    if(amount<=0)return;
-   Set(key+".sent",(double)TimeGMT());Set("reduction_pending",1);GlobalVariablesFlush();
+   Set(key+".order",0);Set(key+".step",step);Set(key+".srv",(double)TimeCurrent());Set(key+".sent",(double)TimeGMT());Set("reduction_pending",1);GlobalVariablesFlush();
    trade.SetExpertMagicNumber((ulong)PositionGetInteger(POSITION_MAGIC));trade.SetTypeFillingBySymbol(symbol);
    bool sent=trade.PositionClosePartial(ticket,amount,20);uint code=trade.ResultRetcode();
    Audit("INVESTMENT_REDUCE",symbol,event,code,target,amount);
-   if(sent && code==TRADE_RETCODE_DONE){Set(key+".sent",0);Set(key+".done",1);Set("reduction_pending",0);}
-   else if(code==TRADE_RETCODE_REJECT || code==TRADE_RETCODE_MARKET_CLOSED || code==TRADE_RETCODE_INVALID_VOLUME || code==TRADE_RETCODE_TRADE_DISABLED){Set(key+".sent",0);Set("reduction_pending",0);}
+   Set(key+".order",(double)trade.ResultOrder());
+   if(DTDefinitiveNoFill((int)code))Set(key+".sent",0);
    GlobalVariablesFlush();
+   ReconcileReductions();
 }
 void ManageInvestment(ulong ticket,int ci,datetime now)
 {
@@ -782,18 +840,32 @@ void Manage(datetime now)
    }
 }
 
+// One reason per engine/bar, even if data retries every two seconds. Diagnostics
+// never consume the signal bar or change eligibility.
+void EntryDiagnostic(int ei,datetime bar,string reason,double a=0,double b=0,double c=0)
+{
+   if(engines[ei].diagnostic_bar!=bar){engines[ei].diagnostic_bar=bar;engines[ei].diagnostic_reasons="";}
+   string tag="|"+reason+"|";
+   if(StringFind(engines[ei].diagnostic_reasons,tag)>=0)return;
+   engines[ei].diagnostic_reasons+=tag;
+   Audit("ENTRY_DIAGNOSTIC",engines[ei].symbol,reason,a,b,c);
+}
 void Evaluate(int ei,datetime now)
 {
    string symbol=engines[ei].symbol; int style=engines[ei].style,ci=FindContract(symbol);
-   if(ci<0 || (style==0 && !day_enabled) || (style==1 && !swing_enabled)) return;
    ENUM_TIMEFRAMES tf=engines[ei].tf;
    datetime bar=iTime(symbol,tf,0); string bk="bar."+symbol+"."+(string)style;
    if(bar<=0 || bar<=(datetime)Get(bk)) return;
-   if((style==0 && !contracts[ci].pool) || !contracts[ci].verified) return;
+   if(ci<0){EntryDiagnostic(ei,bar,"CONTRACT_MISSING",style);return;}
+   if((style==0 && !day_enabled) || (style==1 && !swing_enabled)){EntryDiagnostic(ei,bar,"STYLE_DISABLED",style);return;}
+   if(style==0 && !contracts[ci].pool){EntryDiagnostic(ei,bar,"OUTSIDE_DAY_POOL",style);return;}
+   if(!contracts[ci].verified){EntryDiagnostic(ei,bar,"CONTRACT_UNVERIFIED",style);return;}
+   if(!contracts[ci].entry_allowed)EntryDiagnostic(ei,bar,"ISSUER_OR_RESEARCH_ENTRY_BLOCKED",style);
+   if(contracts[ci].veto_buy || contracts[ci].veto_sell)EntryDiagnostic(ei,bar,"DIRECTIONAL_NEWS_VETO",style,contracts[ci].veto_buy ? 1 : 0,contracts[ci].veto_sell ? 1 : 0);
    datetime bar_utc=bar-contracts[ci].server_offset;
-   if(now<bar_utc || now-bar_utc>60) { Audit("REJECT",symbol,"STALE_ENTRY_BAR"); return; }
+   if(now<bar_utc || now-bar_utc>60) { EntryDiagnostic(ei,bar,"STALE_ENTRY_BAR",style,(double)(now-bar_utc)); return; }
    MqlRates rates[]; ArraySetAsSeries(rates,true);
-   if(CopyRates(symbol,tf,0,192,rates)!=192 || !FXValidHistory(rates,190)) { Audit("REJECT",symbol,"HISTORY"); return; }
+   if(CopyRates(symbol,tf,0,192,rates)!=192 || !FXValidHistory(rates,190)) { EntryDiagnostic(ei,bar,"HISTORY",style); return; }
    FXStrategyContext c={};
    double trend_atr,trend_adx,fast,prior_fast,slow,plus,minus,exhaust;
    if(!ReadValue(engines[ei].atr,0,1,c.atr) || !ReadValue(engines[ei].adx,0,1,c.adx) ||
@@ -803,7 +875,7 @@ void Evaluate(int ei,datetime now)
       !ReadValue(engines[ei].bands,0,1,c.middle_band) || !ReadValue(engines[ei].bands,1,1,c.upper_band) || !ReadValue(engines[ei].bands,2,1,c.lower_band) ||
       !ReadValue(engines[ei].trend_atr,0,1,trend_atr) || !ReadValue(engines[ei].trend_adx,0,1,trend_adx) ||
       !ReadValue(engines[ei].fast,0,1,fast) || !ReadValue(engines[ei].fast,0,2,prior_fast) || !ReadValue(engines[ei].slow,0,1,slow) ||
-      !ReadValue(engines[ei].exhaust,0,1,exhaust) || c.atr<=0 || trend_atr<=0) return;
+      !ReadValue(engines[ei].exhaust,0,1,exhaust) || c.atr<=0 || trend_atr<=0) {EntryDiagnostic(ei,bar,"INDICATORS_UNAVAILABLE",style);return;}
    double slope=(fast-prior_fast)/trend_atr;
    c.regime=FXRegime(trend_adx,slope,20,18,.03);
    c.up=c.regime==1 && c.adx>=16 && TrendDirection(true,fast,prior_fast,slow,iClose(symbol,engines[ei].trend,1),plus,minus);
@@ -815,21 +887,21 @@ void Evaluate(int ei,datetime now)
    FXZone zones[];
    FXBuildZones(rates,2,c.atr,.30,2,128,true,PeriodSeconds(tf)/60,rates[1].time,zones);
    MqlRates higher[]; ArraySetAsSeries(higher,true);
-   if(CopyRates(symbol,engines[ei].trend,0,96,higher)!=96) return;
+   if(CopyRates(symbol,engines[ei].trend,0,96,higher)!=96) {EntryDiagnostic(ei,bar,"TREND_HISTORY",style);return;}
    FXBuildZones(higher,2,trend_atr,.30,2,128,true,PeriodSeconds(engines[ei].trend)/60,rates[1].time,zones);
    if(style==0)
    {
       MqlRates h4[]; ArraySetAsSeries(h4,true);
       double context_atr;
-      if(CopyRates(symbol,PERIOD_H4,0,96,h4)!=96 || !ReadValue(engines[ei].context_atr,0,1,context_atr)) return;
+      if(CopyRates(symbol,PERIOD_H4,0,96,h4)!=96 || !ReadValue(engines[ei].context_atr,0,1,context_atr)) {EntryDiagnostic(ei,bar,"H4_CONTEXT_HISTORY",style);return;}
       FXBuildZones(h4,2,context_atr,.30,2,128,true,240,rates[1].time,zones);
    }
    if(contracts[ci].previous_high>0) FXAddDailyLevel(contracts[ci].previous_high,false,rates[1].time,c.atr,zones);
    if(contracts[ci].previous_low>0) FXAddDailyLevel(contracts[ci].previous_low,true,rates[1].time,c.atr,zones);
    MqlTick tick;
-   if(!SymbolInfoTick(symbol,tick) || now-(tick.time-contracts[ci].server_offset)>30 || now<tick.time-contracts[ci].server_offset-5) return;
+   if(!SymbolInfoTick(symbol,tick) || now-(tick.time-contracts[ci].server_offset)>30 || now<tick.time-contracts[ci].server_offset-5) {EntryDiagnostic(ei,bar,"QUOTE_STALE",style);return;}
    double entry=tick.ask,point=SymbolInfoDouble(symbol,SYMBOL_POINT),size=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(tick.bid<=0 || tick.ask<tick.bid || size<=0) return;
+   if(tick.bid<=0 || tick.ask<tick.bid || size<=0) {EntryDiagnostic(ei,bar,"QUOTE_OR_TICK_SIZE_INVALID",style);return;}
    // Missing history/indicators/quote can retry inside the original 60s window.
    // Once evidence is available a real strategy decision still consumes once.
    Set(bk,(double)bar); GlobalVariablesFlush();
@@ -842,14 +914,22 @@ void Evaluate(int ei,datetime now)
    FXCandidate candidates[]; FXEvaluateStrategies(settings,rates,zones,c,candidates);
    Set(rk+"dir",c.retest_dir); Set(rk+"bar",(double)c.retest_bar); Set(rk+"level",c.retest_level);
    int votes=0; bool conflict=false; int selected=FXSelectCandidate(candidates,65,votes,conflict);
-   if(selected<0) { Audit("SIGNAL",symbol,conflict ? "CONFLICT" : "NO_SETUP",style,c.regime); return; }
+   if(selected<0)
+   {
+      Audit("SIGNAL",symbol,conflict ? "CONFLICT" : "NO_SETUP",style,c.regime);
+      string detail=conflict ? "OPPOSING_CANDIDATES" : c.retest_dir!=0 ? "RETEST_AWAITING_CONFIRMATION" :
+         c.regime==0 ? "TRANSITION_REGIME" : c.regime==1 && !c.up && !c.down ? "TREND_DIRECTION_UNCONFIRMED" :
+         c.regime==-1 ? "RANGE_CONFIRMATION_MISSING" : "TREND_SETUP_CONFIRMATION_MISSING";
+      EntryDiagnostic(ei,bar,detail,style,c.rsi,c.adx);
+      return;
+   }
    FXCandidate candidate=candidates[selected]; bool buy=candidate.direction>0;
    if(style==1 && (!contracts[ci].swing_ready || !contracts[ci].swing_allowed ||
       !DTSwingDirection(contracts[ci].swing_long_only,candidate.direction) || !DTSwingSetup(candidate.setup)))
       {Audit("REJECT",symbol,"SWING_MARKET_OR_SETUP",style);return;}
    if(!FXEntryRSIAllowed(candidate.direction,exhaust,70)) { Audit("REJECT",symbol,"EXHAUSTION",style); return; }
    entry=buy ? tick.ask : tick.bid;
-   if(entry<10 || tick.ask<tick.bid || tick.ask-tick.bid>MathMin(entry*.001,c.atr*.15) || size<=0) return;
+   if(entry<10 || tick.ask<tick.bid || tick.ask-tick.bid>MathMin(entry*.001,c.atr*.15) || size<=0) {EntryDiagnostic(ei,bar,"PRICE_SPREAD_FILTER",style,tick.ask-tick.bid);return;}
    double stop=candidate.stop_anchor+(buy ? -1 : 1)*.25*c.atr;
    double distance=(buy ? 1 : -1)*(entry-stop);
    if(distance< c.atr) stop=entry+(buy ? -1 : 1)*c.atr;
@@ -857,10 +937,10 @@ void Evaluate(int ei,datetime now)
    if(distance>3*c.atr || distance< c.atr*.999) { Audit("REJECT",symbol,"STOP_DISTANCE",style); return; }
    double tp=entry+(buy ? 1 : -1)*2*distance;
    if(candidate.objective>0) tp=buy ? MathMin(tp,candidate.objective) : MathMax(tp,candidate.objective);
-   if(!FXCapTarget(zones,buy,entry,c.atr,.10,tp)) return;
+   if(!FXCapTarget(zones,buy,entry,c.atr,.10,tp)) {EntryDiagnostic(ei,bar,"TARGET_OBSTACLE",style);return;}
    tp=buy ? PriceFloor(tp,size) : PriceCeil(tp,size);
    double unit_loss=StopLossMoney(symbol,buy,1,entry,stop+(buy ? -1 : 1)*contracts[ci].slippage*point),unit_gain=0;
-   if(unit_loss<0 || !OrderCalcProfit(buy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL,symbol,1,entry,tp,unit_gain)) return;
+   if(unit_loss<0 || !OrderCalcProfit(buy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL,symbol,1,entry,tp,unit_gain)) {EntryDiagnostic(ei,bar,"PROFIT_CALCULATION_UNAVAILABLE",style);return;}
    double cost=UnitCost(ci,style,buy),rr=(unit_gain-cost)/(unit_loss+cost);
    if(unit_loss+cost<=0 || rr<1.5) { Audit("REJECT",symbol,"NET_RR",style,rr); return; }
    bool event_ok=!MacroBlocked(now) && contracts[ci].entry_allowed;
@@ -877,11 +957,12 @@ void Evaluate(int ei,datetime now)
    }
    if(now<contracts[ci].open || now>=contracts[ci].close-1800 || !event_ok || !sentiment_ok) { Audit("REJECT",symbol,"SESSION_EVENT_OR_SENTIMENT",style); return; }
    if(!council_ok) { Audit("REJECT",symbol,"SWING_COUNCIL",style,buy ? 1 : -1); return; }
-   if(!(style==0 ? snapshot_ready : swing_ready) || now-generated>60 || !SharedEntryGate(style)) return;
-   for(int i=PositionsTotal()-1;i>=0;i--) if(PositionGetTicket(i)>0 && PositionGetString(POSITION_SYMBOL)==symbol) return;
-   if(now-Get("entry."+symbol)<cooldown) return;
+   if(!(style==0 ? snapshot_ready : swing_ready) || now-generated>60) {EntryDiagnostic(ei,bar,"SNAPSHOT_NOT_READY",style);return;}
+   if(!SharedEntryGate(style)){EntryDiagnostic(ei,bar,"SHARED_ACCOUNT_GATE",style);return;}
+   for(int i=PositionsTotal()-1;i>=0;i--) if(PositionGetTicket(i)>0 && PositionGetString(POSITION_SYMBOL)==symbol) {EntryDiagnostic(ei,bar,"SYMBOL_ALREADY_HELD",style);return;}
+   if(now-Get("entry."+symbol)<cooldown) {EntryDiagnostic(ei,bar,"SYMBOL_COOLDOWN",style);return;}
    long direction=SymbolInfoInteger(symbol,SYMBOL_TRADE_MODE);
-   if(direction!=SYMBOL_TRADE_MODE_FULL && direction!=(buy ? SYMBOL_TRADE_MODE_LONGONLY : SYMBOL_TRADE_MODE_SHORTONLY)) return;
+   if(direction!=SYMBOL_TRADE_MODE_FULL && direction!=(buy ? SYMBOL_TRADE_MODE_LONGONLY : SYMBOL_TRADE_MODE_SHORTONLY)) {EntryDiagnostic(ei,bar,"BROKER_DIRECTION_DISABLED",style);return;}
    double budget=SharedBudget(ci,target_risk);
    double volume=FloorVolume(budget/(unit_loss+cost),SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX),SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP));
    volume=SharedVolume(ci,buy,entry,unit_loss+cost,cost,volume);
@@ -947,7 +1028,7 @@ bool SubmitOrder(int style,int ci,bool buy,double volume,double stop,double tp,d
    string comment=style==2 ? (early ? "DT:INV:EARLY" : "DT:INV") : style==1 ? "DT:SWING" : "DT:DAY";
    bool sent=buy ? trade.Buy(volume,symbol,0,stop,tp,comment) : trade.Sell(volume,symbol,0,stop,tp,comment);
    uint code=trade.ResultRetcode();Audit("ORDER_RESULT",symbol,(string)code,style,volume,trade.ResultDeal());
-   if(code==TRADE_RETCODE_REJECT || code==TRADE_RETCODE_INVALID || code==TRADE_RETCODE_INVALID_VOLUME || code==TRADE_RETCODE_INVALID_STOPS || code==TRADE_RETCODE_NO_MONEY || code==TRADE_RETCODE_MARKET_CLOSED || code==TRADE_RETCODE_TRADE_DISABLED)Set(ik+"time",0);
+   if(DTDefinitiveNoFill((int)code)){Set(ik+"time",0);GlobalVariablesFlush();}
    Reconcile();return sent && code==TRADE_RETCODE_DONE;
 }
 

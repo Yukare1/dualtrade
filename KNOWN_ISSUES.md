@@ -1,6 +1,10 @@
 # Initial AI review findings
 
-Reviewed 2026-10-22. These findings remain open in this source snapshot. Reproduced validation defects are distinguished from static execution-path findings. No running bot was modified during the review.
+Reviewed 2026-10-22. The findings below are addressed in the reliability/frequency
+revision and covered by regression fixtures. This file preserves the original
+failure descriptions for review. Controlled tests do not establish recovery
+from every physical broker/network failure or profitability. See `TUNING.md`
+for changes, research limits and deployment prerequisites.
 
 ## P1: Observation certificate can be rebound after the window
 

@@ -40,9 +40,10 @@ def test_waiver_skips_only_observation_and_never_creates_a_pass(monkeypatch, tmp
     record = authorized(cfg, now)
     monkeypatch.setattr('dualtrade.demo_exception.read_json', lambda *a: record)
     store = Store(tmp_path/'state.db')
-    snap = {'time': now, 'ready': True}
+    from dualtrade.decision_revision import observation_context
+    snap = {'time': now, 'ready': True, 'decision_context': record['context'], 'observation_context': observation_context(cfg)}
     ea = {'time': now, 'demo': True, 'agent_review_required': True,
-          'orders_enabled': False, 'version': __version__}
+          'orders_enabled': False, 'version': __version__, 'decision_context': record['context']}
     write_json(tmp_path/'build/acceptance.json', {'passed': True, 'source_hash': 'a'*64})
     def check():
         write_json(tmp_path/'bridge/snapshot.json', snap)
