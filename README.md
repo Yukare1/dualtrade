@@ -30,6 +30,21 @@ For an isolated demo setup, copy `config.example.json` to ignored `config.local.
 
 Full functional acceptance additionally requires local compilation, native Strategy Tester integration and current source/configuration evidence. Activation also needs a complete healthy observation bound to the decision mechanism; proven non-decision maintenance can reuse that observation while still requiring current deployment checks. See [TUNING.md](TUNING.md). `scripts/check.ps1 -NativeIntegration` is a broker-environment workflow, not the ordinary CI command. A passing unit suite does not enable trading or establish profitability. The historical, date-bound demo exception implemented in source carries no authorization for a new installation.
 
+Prepare the existing SEC analysis cache ahead of the session with
+`python scripts/prepare-fundamentals.py`. It uses the same point-in-time
+transformations and filing-specific cache keys as the collector, preserves
+missing fields, and cannot send orders. Newer collector results win concurrent
+updates; a failed preparation leaves existing caches intact. Its report is
+`runtime/reports/fundamental-preparation.json`.
+
+On a configured Windows workstation using Turkey time,
+`scripts/register-fundamental-preparation.ps1` installs a daily 15:00 preparation
+task. Scheduled runs skip exchange holidays and runs starting at or after
+09:25 New York; keep the computer and user session available. Existing freshness
+limits and checks for newly filed documents still apply during the session.
+The separate document reader retains ownership of full-text reviews and
+uncertainty; preparation does not mark documents reviewed or grant eligibility.
+
 ## AI-assisted development
 
 AI reviewers and human contributors are welcome. Start with [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [AI_REVIEW_REQUEST.md](AI_REVIEW_REQUEST.md). Independent AI reviews have identified reproducible research-validation defects and execution-recovery gaps. Each proposed fix should include a failing regression and preserve order ownership, identity checks and risk ceilings.
