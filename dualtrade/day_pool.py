@@ -3,9 +3,9 @@ import math
 
 
 def pool_size(cfg):
-    value = cfg.get('research', {}).get('day_pool_size', 5)
-    if type(value) is not int or not 1 <= value <= 8:
-        raise ValueError('day_pool_size must be an integer from 1 to 8')
+    value = cfg.get('research', {}).get('day_pool_size', 10)
+    if type(value) is not int or not 1 <= value <= 30:
+        raise ValueError('day_pool_size must be an integer from 1 to 30')
     return value
 
 

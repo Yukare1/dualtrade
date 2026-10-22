@@ -133,3 +133,17 @@ def test_reload_receipt_wait_requires_fresh_disabled_native_and_single_writer(mo
     ea['orders_enabled']=True
     with pytest.raises(RuntimeError,match='no deployment receipt'):
         reload.wait_observation_context(Path('bridge'),'context',999,7,clock=lambda:1001,sleep=lambda _:None)
+
+
+def test_reload_accepts_slow_first_cycle_only_after_fresh_matching_state(monkeypatch):
+    clock = [1000]
+    def read(path, default):
+        if path.name == 'ea-status.json':
+            return dict(time=clock[0],decision_context='context',demo=True,mode='observe',
+                        orders_enabled=False,agent_review_required=True)
+        return dict(time=clock[0],decision_context='context' if clock[0]>=1050 else 'warming')
+    monkeypatch.setattr(reload,'read_json',read)
+    monkeypatch.setattr(reload,'collector_processes',lambda:[process(7,1)])
+    result=reload.wait_observation_context(Path('bridge'),'context',999,7,
+        clock=lambda:clock[0],sleep=lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+    assert clock[0] == 1050 and result[1]['decision_context']=='context'

@@ -39,11 +39,16 @@ def test_holdings_survive_reduced_scan_limit_without_changing_permissions():
     assert not data['contracts'][0]['entry_allowed']
 
 
-@pytest.mark.parametrize('value', [0, 9, True, 3.5, '5'])
+@pytest.mark.parametrize('value', [0, 31, True, 3.5, '5'])
 def test_invalid_scan_limits_are_rejected(value):
     with pytest.raises(ValueError):
         pool_size({'research': {'day_pool_size': value}})
 
 
-def test_default_is_five_scanned_symbols_not_five_positions():
-    assert pool_size({}) == 5
+def test_default_is_ten_scanned_symbols_not_position_capacity():
+    assert pool_size({}) == 10
+
+
+@pytest.mark.parametrize("value", [9, 10, 30])
+def test_expanded_scan_limits_are_supported(value):
+    assert pool_size({"research": {"day_pool_size": value}}) == value

@@ -219,7 +219,7 @@ class Collector:
             items=self.providers.news(news_symbols)
             return {'items':items,'coverage':getattr(self.providers,'last_news_coverage',{'complete':False})}
         investment_news_key='investment_news:'+','.join(news_symbols)
-        news_interval=300 if session and session[0]<=now<=session[1] else 900
+        news_interval=600 if session and session[0]<=now<=session[1] else 900
         investment_news = self.job(investment_news_key, news_interval, investment_news_job, now) if active and news_symbols else self.store.get('job:'+investment_news_key, {})
         if active and pool and isinstance(investment_news.get('data'),dict):
             # One quota-counted request serves both sections; do not spend 104+ calls/day.

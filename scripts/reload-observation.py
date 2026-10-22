@@ -58,7 +58,7 @@ def deployment_precheck(cfg,directory,now,allow_active_cutover=False):
 
 
 def wait_observation_context(directory,expected,after,pid,*,clock=time.time,sleep=time.sleep):
-    for _ in range(40):
+    for _ in range(120):
         now=clock();ea=read_json(directory/'ea-status.json',{});snap=read_json(directory/'snapshot.json',{})
         if (ea.get('time',0)>=after and snap.get('time',0)>=after and
                 0<=now-ea.get('time',0)<=10 and 0<=now-snap.get('time',0)<=60 and

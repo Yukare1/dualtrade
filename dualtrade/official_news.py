@@ -29,17 +29,11 @@ from .storage import atomic_write, fingerprint, process_lock, read_json, write_j
 UTC = timezone.utc
 DIRECTORY = ROOT / 'runtime/official-news'
 UA = 'DualTradeResearch/0.3 official source reader'
-COMPANIES = {
-    'AAPL': ('0000320193', 'https://www.apple.com/newsroom/rss-feed.rss', ('www.apple.com',)),
-    'MSFT': ('0000789019', 'https://blogs.microsoft.com/feed/', ('blogs.microsoft.com', 'news.microsoft.com', 'www.microsoft.com')),
-    'NVDA': ('0001045810', 'https://nvidianews.nvidia.com/releases.xml', ('nvidianews.nvidia.com', 'investor.nvidia.com')),
-    'AMZN': ('0001018724', 'https://ir.aboutamazon.com/rss/pressrelease.aspx', ('ir.aboutamazon.com', 'www.aboutamazon.com')),
-    'META': ('0001326801', 'https://investor.atmeta.com/rss/pressrelease.aspx', ('investor.atmeta.com', 'about.fb.com')),
-    'TSLA': ('0001318605', None, ('ir.tesla.com',)),
-    'AMD': ('0000002488', 'https://ir.amd.com/news-events/press-releases/rss', ('ir.amd.com', 'www.amd.com')),
-    'JPM': ('0000019617', None, ('www.jpmorganchase.com',)),
-    'XOM': ('0000034088', 'https://investor.exxonmobil.com/company-information/press-releases/rss', ('investor.exxonmobil.com', 'corporate.exxonmobil.com')),
-}
+from .universe import STOCKS
+
+# Optional direct issuer feeds complement mandatory SEC coverage.
+COMPANIES = {ticker: (spec["cik"], None, ()) for ticker, spec in STOCKS.items()}
+COMPANIES.update({'AAPL': ('0000320193', 'https://www.apple.com/newsroom/rss-feed.rss', ('www.apple.com',)), 'MSFT': ('0000789019', 'https://blogs.microsoft.com/feed/', ('blogs.microsoft.com', 'news.microsoft.com', 'www.microsoft.com')), 'NVDA': ('0001045810', 'https://nvidianews.nvidia.com/releases.xml', ('nvidianews.nvidia.com', 'investor.nvidia.com')), 'AMZN': ('0001018724', 'https://ir.aboutamazon.com/rss/pressrelease.aspx', ('ir.aboutamazon.com', 'www.aboutamazon.com')), 'META': ('0001326801', 'https://investor.atmeta.com/rss/pressrelease.aspx', ('investor.atmeta.com', 'about.fb.com')), 'AMD': ('0000002488', 'https://ir.amd.com/news-events/press-releases/rss', ('ir.amd.com', 'www.amd.com')), 'XOM': ('0002115436', 'https://investor.exxonmobil.com/company-information/press-releases/rss', ('investor.exxonmobil.com', 'corporate.exxonmobil.com'))})
 IMPORTANT_ITEMS = {'1.01', '1.02', '1.03', '1.05', '2.01', '2.02', '2.05', '2.06', '3.01', '4.01', '4.02', '5.02', '5.07', '8.01'}
 PATTERNS = {
     'earnings_guidance': r'\b(earnings|financial results|quarter(?:ly)? results|reports? (?:first|second|third|fourth) quarter|guidance|outlook|revenue|profit)\b',
@@ -60,7 +54,7 @@ def settings(path=None):
         raise ValueError('Invalid official-news configuration')
     for key, lower, upper in [('feed_poll_seconds', 120, 3600), ('sec_poll_seconds', 120, 3600),
                               ('quiet_poll_seconds', 600, 86400), ('initial_lookback_seconds', 0, 86400),
-                              ('max_queue_age_seconds', 3600, 172800), ('daily_request_limit', 1, 7200),
+                              ('max_queue_age_seconds', 3600, 172800), ('daily_request_limit', 1, 20000),
                               ('source_daily_request_limit', 1, 600), ('agent_batch_limit', 1, 5)]:
         if type(cfg.get(key)) is not int or not lower <= cfg[key] <= upper:
             raise ValueError('Invalid official-news setting: ' + key)
@@ -469,11 +463,11 @@ class OfficialNews:
                     'Validated full-text assessments feed collector gates; the reader sends no orders',
                     'No order permissions or trading acceptance changes']}
         write_json(self.store.directory / 'report.json', result)
-        lines = ['Resmî kaynak haber takibi', 'Güncelleme (UTC): ' + datetime.fromtimestamp(now, UTC).isoformat(),
-                 'Ücretli API çağrısı: 0', 'İnceleme bekleyen: ' + str(counts.get('pending', 0)), '', 'Kaynaklar:']
+        lines = ['ResmÃ® kaynak haber takibi', 'GÃ¼ncelleme (UTC): ' + datetime.fromtimestamp(now, UTC).isoformat(),
+                 'Ãœcretli API Ã§aÄŸrÄ±sÄ±: 0', 'Ä°nceleme bekleyen: ' + str(counts.get('pending', 0)), '', 'Kaynaklar:']
         for s in health:
             lines.append(s['id'] + ': ' + ('OK' if s.get('ok') and not s['overdue'] else s.get('error') or 'NOT_CHECKED_OR_OVERDUE'))
-        lines += ['', 'TSLA / JPM: doğrudan şirket akışı yok; SEC izleniyor.', '', 'Agent incelemeleri:']
+        lines += ['', 'TSLA / JPM: doÄŸrudan ÅŸirket akÄ±ÅŸÄ± yok; SEC izleniyor.', '', 'Agent incelemeleri:']
         for review in reviews:
             lines.extend([review['ticker'] + ': ' + review['summary_tr'], review['why_it_matters_tr'], review['evidence_url'], ''])
         atomic_write(self.store.directory / 'report.txt', '\n'.join(lines))
