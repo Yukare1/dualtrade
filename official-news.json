@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "enabled": true,
+  "feed_poll_seconds": 120,
+  "sec_poll_seconds": 300,
+  "quiet_poll_seconds": 900,
+  "initial_lookback_seconds": 3600,
+  "max_queue_age_seconds": 86400,
+  "daily_request_limit": 7200,
+  "source_daily_request_limit": 600,
+  "tickers": ["AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "AMD", "JPM", "XOM"],
+  "agent_batch_limit": 3
+}

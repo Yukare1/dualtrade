@@ -1,0 +1,188 @@
+
+static MqlRates[] Bars() {
+    var b=new MqlRates[40];
+    for(int i=0;i<b.Length;i++) b[i]=new MqlRates {open=11,close=11,high=12,low=10.8,time=100000-i*900};
+    b[6].low=10; b[14].low=10.1; b[24].low=10.05;
+    return b;
+}
+static void Main() {
+    Check("embedded_selftests",FXEngineTests());
+    var b=Bars(); var z=new FXZone[0];
+    FXBuildZones(b,2,1,0.3,2,30,true,15,b[1].time,ref z);
+    Check("three_independent_pivots",z.Length==1 && z[0].touches==3 && z[0].low<10 && z[0].high>10.1);
+    double center=z[0].center;
+    b[0].low=1; b[0].high=100; b[1].low=1; b[1].high=100;
+    z=new FXZone[0]; FXBuildZones(b,2,1,0.3,2,30,true,15,b[1].time,ref z);
+    Check("signal_and_forming_bar_cannot_rewrite_map",z.Length==1 && z[0].center==center);
+    b=Bars(); b[3].close=9; b[3].low=8.9;
+    z=new FXZone[0]; FXBuildZones(b,2,1,0.3,2,30,true,15,b[1].time,ref z);
+    Check("broken_zones_removed",z.Length==0);
+    z=new FXZone[0]; FXBuildZones(b,2,1,0.3,2,30,false,15,b[1].time,ref z);
+    Check("invalidation_switch_changes_result",z.Length==1);
+    b=Bars(); z=new FXZone[0]; FXBuildZones(b,2,1,0.3,2,8,true,15,b[1].time,ref z);
+    Check("age_limit_is_effective",z.Length==0);
+    b=Bars(); b[14].low=10.8; b[24].low=10.8; b[10].low=10.1;
+    z=new FXZone[0]; FXBuildZones(b,2,1,0.3,2,30,true,15,b[1].time,ref z);
+    Check("nearby_pivots_not_independent_touches",z.Length==0);
+    b=Bars(); b[6].low=10.8; b[14].low=10.8; b[24].low=10.8;
+    b[2].low=10; b[9].low=10.1;
+    z=new FXZone[0]; FXBuildZones(b,2,1,0.3,2,30,true,15,b[1].time,ref z);
+    Check("unconfirmed_pivot_excluded",z.Length==0);
+    b=Bars();
+    // Higher timeframe bar 1 closes after the reference timestamp; its close
+    // must not invalidate a historical level at that earlier decision time.
+    b[1].close=9; b[1].low=8.9; z=new FXZone[0];
+    FXBuildZones(b,2,1,0.3,2,30,true,60,b[1].time,ref z);
+    Check("higher_timeframe_containing_signal_excluded",z.Length==1);
+    var c=new FXCandidate[0];
+    FXAddCandidate(ref c,1,"weak",10,9,40,true,0);
+    FXAddCandidate(ref c,-1,"eligible",10,11,80,true,0);
+    int votes=0; bool conflict=false;
+    Check("subthreshold_vote_cannot_veto",FXSelectCandidate(c,65,ref votes,ref conflict)==1 && !conflict && votes==1);
+    Check("no_forced_trade",FXSelectCandidate(c,90,ref votes,ref conflict)==-1);
+    z=new FXZone[2];
+    z[0]=new FXZone {support=false,low=10.1,high=10.2,center=10.15,score=60};
+    z[1]=new FXZone {support=false,low=10.5,high=10.6,center=10.55,score=90};
+    double target=12;
+    Check("nearest_obstacle_caps_even_when_other_zone_ranks_better",FXCapTarget(z,true,10,1,0.05,ref target) && Math.Abs(target-10.05)<1e-8);
+    z[0].low=9.8; z[0].high=9.9; target=12;
+    Check("broken_resistance_behind_entry_not_obstacle",FXCapTarget(z,true,10,1,0.05,ref target) && Math.Abs(target-10.45)<1e-8);
+    z[0].low=10; z[0].high=10.1; target=12;
+    Check("entry_on_zone_boundary_is_blocked",!FXCapTarget(z,true,10,1,0.05,ref target));
+    Check("structure_bonus_requires_structure",FXSetupScore(90,true,true,true)>FXSetupScore(90,false,true,true));
+    b=Bars(); Check("valid_history",FXValidHistory(b,30));
+    b[5].close=Double.NaN; Check("invalid_ohlc_rejected",!FXValidHistory(b,30));
+    var settings=new FXStrategySettings {breakout_bars=20,retest_max_bars=8,level_tolerance=0.3,retest_tolerance=0.1,range_adx=18};
+    var context=new FXStrategyContext {support_index=0,resistance_index=-1,regime=1,up=true,atr=1,adx=25,rsi=55,prior_rsi=50,entry_ma=10.05,prior_ma=10.05,now=100000};
+    b=Bars(); b[1]=new MqlRates {open=10.2,low=9.9,high=11,close=10.9,time=99100};
+    z=new FXZone[] {new FXZone {support=true,low=9.95,high=10.05,center=10,score=70}};
+    c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("all_strategies_disabled_means_no_signals",c.Length==0);
+    settings.rejection=true; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("rejection_flag_is_wired",c.Length==1 && c[0].setup=="S/R rejection");
+    settings.pullback=true; c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("strategies_evaluated_together_not_else_if",c.Length==2);
+    settings.rejection=false; settings.pullback=false; settings.breakout=true; settings.retest=true;
+    b[1]=new MqlRates {open=11.9,low=11.85,high=12.9,close=12.8,time=99100};
+    c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("breakout_arms_retest_without_entry",c.Length==0 && context.retest_dir==1);
+    FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("same_bar_cannot_confirm_own_retest",c.Length==0);
+    b[1]=new MqlRates {open=12.1,low=11.95,high=12.8,close=12.7,time=100000}; context.now=100900;
+    FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("later_retest_generates_entry",c.Length==1 && c[0].setup=="Donchian retest");
+    context.retest_dir=1; context.retest_level=12; context.retest_bar=90000;
+    b[1].close=12; // no fresh breakout may re-arm the expired setup
+    c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("expired_retest_cannot_generate_entry",c.Length==0 && context.retest_dir==0);
+    settings.breakout=false; settings.range=true;
+    context.regime=-1; context.up=false; context.adx=15; context.rsi=40; context.prior_rsi=35;
+    context.lower_band=10.2; context.middle_band=12; context.upper_band=13;
+    b[1]=new MqlRates {open=10.2,low=9.9,high=11,close=10.9,time=100000};
+    c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("range_module_works_without_trend_gate",c.Length==1 && c[0].setup=="Range reversion" && c[0].objective==12);
+    context.regime=1; c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("range_module_cannot_fade_trend_regime",c.Length==0);
+    var daily=new MqlRates[4];
+    daily[0].time=100000; daily[1]=new MqlRates {time=13600,high=99,low=1};
+    daily[2]=new MqlRates {time=-72800,high=13,low=9};
+    b=Bars(); z=new FXZone[0]; FXDailyZones(daily,b,1,false,0.3,ref z);
+    Check("daily_rollover_excludes_signal_day",z.Length==2 && z[0].center==9 && z[1].center==13);
+    daily[0].time=90000; z=new FXZone[0]; FXDailyZones(daily,b,1,false,0.3,ref z);
+    Check("normal_day_uses_previous_completed_day",z.Length==2 && z[0].center==1 && z[1].center==99);
+    Check("direction_permissions",FXDirectionAllowed(-1,true,true) && !FXDirectionAllowed(-1,true,false)
+       && FXDirectionAllowed(-1,false,true) && !FXDirectionAllowed(1,false,true) && !FXDirectionAllowed(0,true,true));
+    Check("h4_exhaustion_is_symmetric",FXEntryRSIAllowed(1,70,70) && FXEntryRSIAllowed(-1,30,70)
+       && !FXEntryRSIAllowed(1,71,70) && !FXEntryRSIAllowed(-1,29,70));
+    Check("h4_rsi_invalid_fails_closed",!FXEntryRSIAllowed(1,Double.NaN,70) && !FXEntryRSIAllowed(-1,-1,70));
+    var bull=new MqlRates {open=10.2,low=9.9,high=10.9,close=10.8};
+    var bear=new MqlRates {open=19.8,high=20.1,low=19.1,close=19.2};
+    Check("retest_quality_buy_sell_symmetry",FXRetestQuality(true,bull,10,1,60,70,1)
+       && FXRetestQuality(false,bear,20,1,40,70,1));
+    Check("retest_rejects_exhausted_momentum",!FXRetestQuality(true,bull,10,1,71,70,1)
+       && !FXRetestQuality(false,bear,20,1,29,70,1));
+    Check("retest_rejects_chasing",!FXRetestQuality(true,bull,10,1,60,70,0.5)
+       && !FXRetestQuality(false,bear,20,1,40,70,0.5));
+    var priorBuy=new MqlRates {close=10.5}; var priorSell=new MqlRates {close=19.5};
+    Check("rejection_requires_zone_strength",!FXRejectionQuality(true,bull,priorBuy,60,65));
+    Check("rejection_quality_buy_sell_symmetry",FXRejectionQuality(true,bull,priorBuy,70,65)
+       && FXRejectionQuality(false,bear,priorSell,70,65));
+    priorBuy.close=11; priorSell.close=19;
+    Check("rejection_requires_close_progress",!FXRejectionQuality(true,bull,priorBuy,70,65)
+       && !FXRejectionQuality(false,bear,priorSell,70,65));
+    // Full production strategy paths must actually emit SELL candidates.
+    settings=new FXStrategySettings {rejection=true,pullback=true,breakout_bars=20,retest_max_bars=8,
+       level_tolerance=0.3,retest_tolerance=0.1,range_adx=18,strict_rejection=true,min_rejection_score=65};
+    context=new FXStrategyContext {support_index=-1,resistance_index=0,regime=1,down=true,atr=1,adx=25,
+       rsi=45,prior_rsi=50,entry_ma=19.95,prior_ma=19.95,now=100000};
+    b=Bars(); b[1]=new MqlRates {open=19.8,high=20.1,low=19,close=19.1,time=99100}; b[2].close=19.5;
+    z=new FXZone[] {new FXZone {support=false,low=19.95,high=20.05,center=20,score=70}};
+    c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("rejection_and_pullback_emit_shorts",c.Length==2 && c[0].direction==-1 && c[1].direction==-1);
+    settings.rejection=false; settings.pullback=false; settings.breakout=true; settings.retest=true;
+    settings.strict_retest=true; settings.max_retest_atr=1; settings.max_retest_rsi=70;
+    for(int i=2;i<b.Length;i++) b[i]=new MqlRates {open=20,close=20,high=20.2,low=19.8,time=100000-i*900};
+    b[1]=new MqlRates {open=19.9,high=20,low=18.9,close=19,time=99100};
+    c=new FXCandidate[0]; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("downside_breakout_arms_short_retest",c.Length==0 && context.retest_dir==-1);
+    b[1]=new MqlRates {open=19.6,high=19.85,low=19,close=19.1,time=100000};context.now=100900;
+    FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("quality_retest_emits_short",c.Length==1 && c[0].direction==-1);
+    settings.breakout=false; settings.range=true; context.regime=-1;context.adx=15;context.down=false;
+    context.rsi=60;context.prior_rsi=65;context.upper_band=19.8;context.middle_band=18;
+    b[1]=new MqlRates {open=19.8,high=20.1,low=19,close=19.1,time=100000};
+    c=new FXCandidate[0];FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("range_reversion_emits_short",c.Length==1 && c[0].direction==-1 && c[0].objective==18);
+
+    for(int days=1;days<=60;days++) {
+        Check("swing_no_age_exit_"+days,DTExitPolicy(1,days*86400,40000,0,0,true,false,false,false)==0);
+    }
+    Check("day_close",DTExitPolicy(0,9700,10000,0,0,false,false,false,false)==4);
+    Check("day_macro",DTExitPolicy(0,100,10000,0,0,true,false,false,false)==5);
+    Check("swing_earnings",DTExitPolicy(1,500,10000,400,1000,false,false,false,false)==3);
+    Check("swing_daily_halt",DTExitPolicy(1,500,10000,0,0,false,true,false,false)==1);
+    Check("swing_cross",DTExitPolicy(1,500,10000,0,0,false,false,true,false)==6);
+    Check("shared_scales_down",DTScaledLimit(40,500,.04)==20);
+    Check("stop_true_with_server_reject_is_failure",!DTStopConfirmed(true,10016,10009,true,99,104,99,104,.01));
+    Check("stop_server_done_but_unchanged_is_failure",!DTStopConfirmed(true,10009,10009,true,98,104,99,104,.01));
+    Check("stop_missing_position_is_failure",!DTStopConfirmed(true,10009,10009,false,99,104,99,104,.01));
+    Check("stop_confirmed_on_broker_position",DTStopConfirmed(true,10009,10009,true,99,104,99,104,.01));
+    Check("shared_cannot_scale_up",DTScaledLimit(40,2000,.04)==40);
+    string wa="user-20261022-day-observation-waiver";
+    Check("waiver_exact_scope",DTDayObservationWaiver(1792680000,1792697100,0,true,true,"ctx","ctx",wa));
+    Check("waiver_expiry",!DTDayObservationWaiver(1792697100,1792697100,0,true,true,"ctx","ctx",wa));
+    Check("waiver_other_day",!DTDayObservationWaiver(1792766400,1792697100,0,true,true,"ctx","ctx",wa));
+    Check("waiver_no_swing",!DTDayObservationWaiver(1792680000,1792697100,1,true,true,"ctx","ctx",wa));
+    Check("waiver_no_real_account",!DTDayObservationWaiver(1792680000,1792697100,0,false,true,"ctx","ctx",wa));
+    Check("waiver_no_stale_context",!DTDayObservationWaiver(1792680000,1792697100,0,true,true,"old","ctx",wa));
+    Check("waiver_no_unreviewed_entry",!DTDayObservationWaiver(1792680000,1792697100,0,true,false,"ctx","ctx",wa));
+    Check("shared_lifetime_capacity",DTAccountCapacity(10,1000,1000,500,1000,1000,600,9)==1);
+    Check("shared_week_capacity",DTAccountCapacity(410,1000,1000,1000,1000,1000,600,9)==1);
+    Check("shared_peak_capacity",DTAccountCapacity(1500,1000,2490,1500,1000,1000,600,9)==1);
+    Check("shared_sector_nominal_capacity",DTExposureVolume(1000,2000,1900,100,4,2)==1);
+    Check("shared_stress_capacity",DTStressVolume(1000,190,10,.2)==1);
+    Check("shared_stress_no_capacity",DTStressVolume(1000,200,10,.2)==0);
+    Check("swing_long_only",DTSwingDirection(true,1) && !DTSwingDirection(true,-1));
+    Check("swing_separate_setups",DTSwingSetup("EMA pullback") && DTSwingSetup("Donchian retest") && !DTSwingSetup("S/R rejection"));
+    Check("sizing_default",DTRiskBudget(40,100,80,0,1000,1000,200,0)==40);
+    Check("sizing_daily_headroom",DTRiskBudget(40,100,80,40,825,1000,200,10)==15);
+    Check("sizing_no_headroom",DTRiskBudget(40,100,80,80,1000,1000,200,0)==0);
+    Check("disconnect_cannot_reset_day",!DTCanRollDay(false,false,true));
+    Check("unresolved_exit_cannot_reset_day",!DTCanRollDay(true,true,true));
+    Check("normal_day_roll",DTCanRollDay(true,false,true));
+    Check("council_day_unaffected",DTCouncilAllows(0,false,false,false,true));
+    Check("council_swing_missing_blocks",!DTCouncilAllows(1,false,true,true,true));
+    Check("council_opposition_blocks_long",!DTCouncilAllows(1,true,false,true,true));
+    Check("council_opposition_blocks_short",!DTCouncilAllows(1,true,true,false,false));
+    Check("council_neutral_allows_technical_swing",DTCouncilAllows(1,true,true,true,true));
+    // Retest age is counted in actual H4 bars, including a weekend discontinuity.
+    b=Bars(); for(int i=0;i<b.Length;i++) b[i].time=1000000-i*14400;
+    context=new FXStrategyContext {support_index=-1,resistance_index=-1,regime=1,atr=1,rsi=55,retest_dir=1,retest_level=11,retest_bar=b[3].time,now=1000000};
+    settings=new FXStrategySettings {breakout=true,retest=true,breakout_bars=20,retest_max_bars=8};
+    b[1].close=11; c=new FXCandidate[0]; z=new FXZone[0];
+    FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("h4_retest_not_expired_after_two_bars",context.retest_dir==1);
+    context.retest_bar=b[12].time; FXEvaluateStrategies(settings,b,z,ref context,ref c);
+    Check("h4_retest_expires_after_eight_bars",context.retest_dir==0);
+}
+}

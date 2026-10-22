@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dualtrade"
+version = "0.3.1"
+description = "Demo-only MT5 day, technical swing and fundamental investment system"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.32,<3", "pandas>=2.2,<3", "tzdata>=2025.2", "exchange-calendars>=4.11,<5", "psutil>=6,<8", "icalendar>=6,<8", "beautifulsoup4>=4.12,<5", "pdfplumber>=0.11,<0.12", "MetaTrader5>=5.0.5120; platform_system=='Windows'"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+sentiment = ["transformers>=4.45,<5", "torch>=2.4"]
+
+[project.scripts]
+dualtrade = "dualtrade.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dualtrade*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

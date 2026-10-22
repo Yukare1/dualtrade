@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "enabled": false,
+  "monthly_limit_usd": 15,
+  "daily_limit_usd": 0.5,
+  "poll_seconds": 120,
+  "price_reviewed_on": "2026-10-22",
+  "news_accounts": ["ReutersBiz", "CNBC"],
+  "macro_accounts": ["federalreserve", "BLS_gov", "SECGov"],
+  "symbols": {
+    "AAPL": ["AAPL", "Apple"],
+    "MSFT": ["MSFT", "Microsoft"],
+    "NVDA": ["NVDA", "Nvidia"],
+    "AMZN": ["AMZN", "Amazon"],
+    "META": ["Meta Platforms", "Facebook"],
+    "TSLA": ["TSLA", "Tesla"],
+    "AMD": ["AMD", "Advanced Micro Devices"],
+    "JPM": ["JPM", "JPMorgan"],
+    "XOM": ["XOM", "Exxon"],
+    "SPY": ["SPY", "S&P 500"],
+    "QQQ": ["QQQ", "Nasdaq"]
+  }
+}

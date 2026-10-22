@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "request_id", "context", "evidence_sha256", "action", "risk_usd", "win_probability", "rationale_tr", "checks"],
+  "properties": {
+    "schema": {"const": 1},
+    "request_id": {"type": "string"},
+    "context": {"type": "string"},
+    "evidence_sha256": {"type": "string"},
+    "action": {"enum": ["APPROVE", "REJECT"]},
+    "risk_usd": {"type": "number", "minimum": 0, "maximum": 40},
+    "win_probability": {"type": "null"},
+    "rationale_tr": {"type": "string", "minLength": 40, "maxLength": 4000},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["structure", "trend", "volatility", "costs", "events", "levels", "stop", "capacity"],
+      "properties": {
+        "structure": {"type": "boolean"}, "trend": {"type": "boolean"},
+        "volatility": {"type": "boolean"}, "costs": {"type": "boolean"},
+        "events": {"type": "boolean"}, "levels": {"type": "boolean"},
+        "stop": {"type": "boolean"}, "capacity": {"type": "boolean"}
+      }
+    }
+  }
+}

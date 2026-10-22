@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "terminal_path": "C:/Program Files/MetaTrader 5 IC Markets Global/terminal64.exe",
+  "expected_server": "ICMarketsSC-Demo",
+  "expected_login": null,
+  "expected_currency": "USD",
+  "starting_balance": 1000.0,
+  "bridge_directory": "runtime/bridge",
+  "magic_day": 26102201,
+  "magic_swing": 26102202,
+  "magic_investment": 26102203,
+  "swing": {
+    "enabled": true,
+    "long_only": true
+  },
+  "shared_risk": {
+    "position_fraction": 0.04,
+    "aggregate_fraction": 0.08,
+    "sector_fraction": 0.06,
+    "daily_fraction": 0.2,
+    "max_lifetime_loss": 1000.0,
+    "max_drawdown": 1000.0,
+    "max_weekly_loss": 600.0,
+    "gross_exposure_multiple": 4.0,
+    "sector_exposure_multiple": 2.0,
+    "stress_fraction": 0.08,
+    "stress_budget_fraction": 0.2
+  },
+  "risk": {
+    "target": 40.0,
+    "absolute_ceiling": 100.0,
+    "aggregate": 80.0,
+    "daily_loss": 200.0,
+    "free_margin_fraction": 0.2,
+    "daily_entries": 5,
+    "cooldown_seconds": 3600
+  },
+  "research": {
+    "marketaux_daily_limit": 90,
+    "alpha_daily_limit": 25,
+    "feed_max_age": 1200,
+    "heartbeat_max_age": 60,
+    "sentiment_validation_file": "runtime/sentiment-validation.json",
+    "macro_override_file": "runtime/macro-verified.json",
+    "issuer_calendar_file": "runtime/issuer-earnings.json",
+    "context_provider": "official_agent"
+  },
+  "symbols": {
+    "AAPL": {
+      "kind": "stock",
+      "cik": "0000320193",
+      "sector": "technology"
+    },
+    "MSFT": {
+      "kind": "stock",
+      "cik": "0000789019",
+      "sector": "technology"
+    },
+    "NVDA": {
+      "kind": "stock",
+      "cik": "0001045810",
+      "sector": "technology"
+    },
+    "AMZN": {
+      "kind": "stock",
+      "cik": "0001018724",
+      "sector": "consumer"
+    },
+    "META": {
+      "kind": "stock",
+      "cik": "0001326801",
+      "sector": "communication"
+    },
+    "GOOGL": {
+      "kind": "stock",
+      "cik": "0001652044",
+      "sector": "communication"
+    },
+    "TSLA": {
+      "kind": "stock",
+      "cik": "0001318605",
+      "sector": "consumer"
+    },
+    "AMD": {
+      "kind": "stock",
+      "cik": "0000002488",
+      "sector": "technology"
+    },
+    "JPM": {
+      "kind": "stock",
+      "cik": "0000019617",
+      "sector": "bank"
+    },
+    "XOM": {
+      "kind": "stock",
+      "cik": "0000034088",
+      "sector": "energy"
+    },
+    "SPY": {
+      "kind": "etf"
+    },
+    "QQQ": {
+      "kind": "etf"
+    }
+  },
+  "contracts": {},
+  "council_file": "council.example.json",
+  "investment": {
+    "enabled": true,
+    "nominal_fraction": 0.25,
+    "early_fraction": 0.125,
+    "early_risk": 20.0,
+    "normal_score": 70,
+    "early_score": 60,
+    "discount": 0.15,
+    "stop_atr": 4.0,
+    "financing_days": 180,
+    "max_cost_fraction": 0.05,
+    "minimum_rr": 1.5,
+    "max_period_age_days": 150,
+    "max_source_age": 86400,
+    "news_max_age": 259200,
+    "early_review_days": 90,
+    "events_file": "runtime/material-events.json"
+  }
+}

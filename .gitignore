@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+runtime/
+config.local.json
+.codex/config.toml
+.env
+*.ex5
+*.log
+build/
+models/
+*.egg-info/
+
+# Private machine state and publication outputs
+.codex/
+.agents/
+.env.*
+!.env.example
+*.local.json
+*credentials*.json
+*vault*.json
+*.pem
+*.key
+*.sqlite3*
+*.db
+publication/

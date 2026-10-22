@@ -1,0 +1,39 @@
+{
+  "frozen_revision_type": "SHA-256 content snapshot; no Git revision asserted",
+  "files": [
+    {
+      "frozen": "MQL5\\Include\\Frozen\\SRGuardCore.mqh",
+      "sha256": "f79afa91e50a418262ee8106a68a9a569e08ad4f74302cf3cc0975de17132a31",
+      "source": "Owner previous trading-bot project: MQL5/Include/SRGuardCore.mqh",
+      "matches_source": true
+    },
+    {
+      "frozen": "MQL5\\Include\\Frozen\\SRGuardFXEngine.mqh",
+      "sha256": "1bc4bb08327428e916137376cac1f2f1015e6da93bcb174611adc7d8736d4ebd",
+      "source": "Owner previous trading-bot project: MQL5/Include/SRGuardFXEngine.mqh",
+      "matches_source": true
+    },
+    {
+      "frozen": "MQL5\\Include\\Frozen\\SRGuardSignalRules.mqh",
+      "sha256": "aaa779f392a7ab8fe0723e1cba461554e9ff8a2dae859a599d39096e8b9c8ffd",
+      "source": "Owner previous trading-bot project: MQL5/Include/SRGuardSignalRules.mqh",
+      "matches_source": true
+    },
+    {
+      "frozen": "dualtrade\\frozen\\analyst.py",
+      "sha256": "fa031ca8f1b22baa304565b50cee24c466608e7e53391137d41dac49ae9874df",
+      "source": "installed trader-analyst scripts/facts.py, https://github.com/Jakeschincariol/trader-skill"
+    },
+    {
+      "frozen": "dualtrade/frozen/ptr.py",
+      "sha256": "42c8541c18f4bbbcd5835b520174faa4ca50c56786c979ed541654ae5c86be12",
+      "source": "trader-skill/trader-pelosi/ptr.py; https://github.com/Jakeschincariol/trader-skill",
+      "adaptations": "Frozen unchanged parser; wrapped by fail-closed PDF completeness checks in council.py"
+    }
+  ],
+  "adaptations": [
+    "DualSignals.mqh changes retest aging to elapsed candles for H4/weekends",
+    "Replaces forex percentage/exposure limits with fixed USD demo controls",
+    "Previous project isolated tester script adapted without credentials copying"
+  ]
+}

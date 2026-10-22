@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "mode": "veto",
+  "weight_basis": "Political influence heuristic, not investment ability: former Speaker 3; former full-committee chair 2; current subcommittee ranking member 1.5; committee member 1. Choose the highest applicable category; no additive bonuses.",
+  "roles_reviewed_on": "2026-10-22",
+  "roles_valid_until": "2027-01-03",
+  "refresh_seconds": 3600,
+  "feed_max_age_seconds": 86400,
+  "max_filing_age_days": 90,
+  "max_trade_age_days": 180,
+  "freshness_half_life_days": 45,
+  "minimum_households": 2,
+  "minimum_base_weight_coverage": 0.4,
+  "opposition_fraction": 0.6666666666666666,
+  "maximum_household_weight": 0.4,
+  "members": [
+    {"id":"pelosi","name":"Nancy Pelosi","index_names":["Nancy Pelosi"],"importance":3,"role":"Speaker Emerita / former Speaker","source":"https://pelosi.house.gov/biography"},
+    {"id":"mccaul","name":"Michael McCaul","index_names":["Michael McCaul"],"importance":2,"role":"Former full-committee chair / chairman emeritus","source":"https://mccaul.house.gov/issues/foreign-affairs"},
+    {"id":"gottheimer","name":"Josh Gottheimer","index_names":["Josh Gottheimer"],"importance":1.5,"role":"Intelligence subcommittee ranking member; Financial Services member","source":"https://gottheimer.house.gov/committees-caucuses"},
+    {"id":"khanna","name":"Ro Khanna","index_names":["Rohit Khanna","Ro Khanna"],"importance":1.5,"role":"Armed Services CITI subcommittee ranking member","source":"https://armedservices.house.gov/news/documentsingle.aspx?DocumentID=4921"},
+    {"id":"crenshaw","name":"Dan Crenshaw","index_names":["Daniel Crenshaw","Dan Crenshaw"],"importance":1,"role":"Energy and Commerce / Intelligence committee member","source":"https://crenshaw.house.gov/committees"}
+  ]
+}
